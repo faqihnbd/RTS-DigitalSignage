@@ -1,0 +1,23 @@
+{
+  "development": {
+    "username": "root",
+    "password": "faqih2204",
+    "database": "rts_digitalsignage",
+    "host": "127.0.0.1",
+    "dialect": "mysql"
+  },
+  "test": {
+    "username": "root",
+    "password": "faqih2204",
+    "database": "rts_digital_signage_test",
+    "host": "127.0.0.1",
+    "dialect": "mysql"
+  },
+  "production": {
+    "username": "root",
+    "password": "faqih2204",
+    "database": "rts_digital_signage_prod",
+    "host": "127.0.0.1",
+    "dialect": "mysql"
+  }
+}
