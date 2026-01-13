@@ -3,17 +3,34 @@ node_modules/
 dist/
 build/
 .env
+.env.*
+!.env.example
 .env.local
 .env.*.local
 uploads/
+nginx/certs/
 .DS_Store
 .vscode/
 npm-debug.log
 yarn-error.log
 /.idea/
 /.history/
-/*.log
+*.log
 coverage/
 .cache/
 docker-compose.override.yml
-nginx/certs/
+
+# build outputs
+dist/
+build/
+**/dist/
+**/build/
+
+# node
+node_modules/
+**/node_modules/
+
+# sensitive/private keys
+*.pem
+*.key
+
