@@ -71,8 +71,8 @@ services:
       context: ./frontend-admin
       dockerfile: Dockerfile
       args:
-        - VITE_API_BASE_URL=http://${SERVER_HOST}:${HTTP_PORT}/api
-        - VITE_API_URL=http://${SERVER_HOST}:${HTTP_PORT}/api
+        - VITE_API_BASE_URL=http://${SERVER_HOST}:${HTTP_PORT}
+        - VITE_API_URL=http://${SERVER_HOST}:${HTTP_PORT}
     container_name: wisse-frontend-admin
     networks:
       - wisse-network
@@ -86,8 +86,8 @@ services:
       context: ./frontend-central
       dockerfile: Dockerfile
       args:
-        - VITE_API_BASE_URL=http://${SERVER_HOST}:${HTTP_PORT}/api
-        - VITE_API_URL=http://${SERVER_HOST}:${HTTP_PORT}/api
+        - VITE_API_BASE_URL=http://${SERVER_HOST}:${HTTP_PORT}
+        - VITE_API_URL=http://${SERVER_HOST}:${HTTP_PORT}
     container_name: wisse-frontend-central
     networks:
       - wisse-network
@@ -101,8 +101,8 @@ services:
       context: ./frontend-display
       dockerfile: Dockerfile
       args:
-        - VITE_API_BASE_URL=http://${SERVER_HOST}:${HTTP_PORT}/api
-        - VITE_API_URL=http://${SERVER_HOST}:${HTTP_PORT}/api
+        - VITE_API_BASE_URL=http://${SERVER_HOST}:${HTTP_PORT}
+        - VITE_API_URL=http://${SERVER_HOST}:${HTTP_PORT}
     container_name: wisse-frontend-display
     networks:
       - wisse-network
