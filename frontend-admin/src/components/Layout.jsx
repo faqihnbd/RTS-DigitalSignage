@@ -238,7 +238,7 @@ export default function Layout({ children }) {
           <div className="flex items-center gap-3 mb-4">
             <div className="w-12 h-12 rounded-xl flex items-center justify-center shadow-lg overflow-hidden bg-white/0">
               <img
-                src="/Wisse_logo1.png"
+                src="/admin/Wisse_logo1.png"
                 alt="Wisse Logo"
                 className="w-8 h-8 object-contain"
               />

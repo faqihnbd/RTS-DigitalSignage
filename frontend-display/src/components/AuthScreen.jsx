@@ -85,7 +85,7 @@ const AuthScreen = ({
       <div
         className="absolute inset-0 z-0 bg-cover bg-center bg-no-repeat"
         style={{
-          backgroundImage: 'url("/public/bg-login2.png")',
+          backgroundImage: 'url("/display/bg-login2.png")',
         }}
       >
         <div className="absolute inset-0 backdrop-blur-sm bg-black/20"></div>
@@ -102,7 +102,7 @@ const AuthScreen = ({
           <div className="text-center mb-6">
             <div className="w-14 h-14 bg-white rounded-2xl mx-auto mb-3 flex items-center justify-center overflow-hidden">
               <img
-                src="/Wisse_logo1.png"
+                src="/display/Wisse_logo1.png"
                 alt="Wisse Logo"
                 className="w-7 h-7 object-contain"
               />

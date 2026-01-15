@@ -42,7 +42,7 @@ export default function Login({ onLogin, showNotif }) {
       <div
         className="absolute inset-0 z-0 bg-cover bg-center bg-no-repeat"
         style={{
-          backgroundImage: 'url("/public/bg-login2.png")',
+          backgroundImage: 'url("/central/bg-login2.png")',
         }}
       >
         <div className="absolute inset-0 backdrop-blur-sm bg-black/20"></div>
@@ -57,7 +57,7 @@ export default function Login({ onLogin, showNotif }) {
         <div className="mb-8 flex flex-col items-center">
           <div className="w-16 h-16 rounded-full bg-blue-600 flex items-center justify-center shadow-lg animate-bounce-slow overflow-hidden">
             <img
-              src="/Wisse_logo1.png"
+              src="/central/Wisse_logo1.png"
               alt="Wisse"
               className="w-9 h-9 object-contain"
             />

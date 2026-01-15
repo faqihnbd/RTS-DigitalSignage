@@ -137,7 +137,7 @@ export default function Login() {
       <div
         className="absolute inset-0 bg-cover bg-center bg-no-repeat"
         style={{
-          backgroundImage: 'url("/public/bg-login2.png")',
+          backgroundImage: 'url("/admin/bg-login2.png")',
         }}
       >
         <div className="absolute inset-0 backdrop-blur-sm bg-black/10"></div>
@@ -310,7 +310,7 @@ export default function Login() {
           <div className="bg-white/90 backdrop-blur-md rounded-2xl shadow-2xl p-8 border border-white/30">
             <div className="text-center mb-6">
               <img
-                src="/Wisse_logo1.png"
+                src="/admin/Wisse_logo1.png"
                 alt="Wisse Logo"
                 className="w-12 h-12 mx-auto mb-4 object-contain"
               />
