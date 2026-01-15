@@ -10,7 +10,7 @@ export default defineConfig({
       manifest: {
         name: "Wisse Digital Signage Admin",
         short_name: "WisseAdmin",
-        start_url: "/",
+        start_url: "/admin/",
         display: "standalone",
         background_color: "#18181b",
         theme_color: "#2563eb",
@@ -29,4 +29,13 @@ export default defineConfig({
       },
     }),
   ],
+  base: "/admin/",
+  server: {
+    port: 5173,
+    host: true,
+  },
+  build: {
+    outDir: "dist",
+    assetsDir: "assets",
+  },
 });

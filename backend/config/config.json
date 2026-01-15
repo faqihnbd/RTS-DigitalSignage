@@ -1,7 +1,7 @@
 {
   "development": {
     "username": "root",
-    "password": "faqih2204",
+    "password": "",
     "database": "rts_digitalsignage",
     "host": "127.0.0.1",
     "dialect": "mysql"

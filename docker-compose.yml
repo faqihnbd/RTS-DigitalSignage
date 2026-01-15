@@ -1,90 +1,153 @@
-version: "3.3"
+version: "3.8"
+
 services:
+  # ==============================================
+  # MySQL Database
+  # ==============================================
   mysql:
     image: mysql:8.0
+    container_name: wisse-mysql
     environment:
-      MYSQL_ROOT_PASSWORD: faqih2204
-      MYSQL_DATABASE: rts_digital_signage_prod
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${DB_NAME}
     volumes:
       - mysql_data:/var/lib/mysql
     networks:
-      - webnet
+      - wisse-network
     restart: unless-stopped
     healthcheck:
-      test:
-        [
-          "CMD",
-          "mysqladmin",
-          "ping",
-          "-h",
-          "localhost",
-          "-u",
-          "root",
-          "-pfaqih2204",
-        ]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD}"]
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 30s
 
+  # ==============================================
+  # Backend API
+  # ==============================================
   backend:
-    build: ./backend
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: wisse-backend
     environment:
-      - NODE_ENV=production
-      - PORT=3001
-      - DB_HOST=mysql
-      - DB_USER=root
-      - DB_PASS=faqih2204
-      - DB_NAME=rts_digital_signage_prod
-      - DB_PASS=faqih2204
-      - DB_NAME=rts_digitalsignage
+      - NODE_ENV=${NODE_ENV:-production}
+      - PORT=${BACKEND_PORT:-3001}
+      - DB_HOST=${DB_HOST:-mysql}
+      - DB_PORT=${DB_PORT:-3306}
+      - DB_USER=${DB_USER:-root}
+      - DB_PASS=${DB_PASS}
+      - DB_NAME=${DB_NAME}
+      - MIDTRANS_SERVER_KEY=${MIDTRANS_SERVER_KEY}
+      - MIDTRANS_CLIENT_KEY=${MIDTRANS_CLIENT_KEY}
+      - MIDTRANS_IS_PRODUCTION=${MIDTRANS_IS_PRODUCTION:-false}
+      - JWT_SECRET=${JWT_SECRET}
+      - JWT_EXPIRES_IN=${JWT_EXPIRES_IN:-24h}
+      - FRONTEND_ADMIN_URL=http://${SERVER_HOST}:${HTTP_PORT}/admin
+      - FRONTEND_CENTRAL_URL=http://${SERVER_HOST}:${HTTP_PORT}/central
+      - FRONTEND_DISPLAY_URL=http://${SERVER_HOST}:${HTTP_PORT}/display
+      - LOG_LEVEL=${LOG_LEVEL:-info}
     volumes:
       - ./backend/uploads:/usr/src/app/uploads
+      - ./backend/logs:/usr/src/app/logs
     depends_on:
       mysql:
         condition: service_healthy
     networks:
-      - webnet
+      - wisse-network
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:${BACKEND_PORT:-3001}/', (r) => process.exit(r.statusCode === 200 ? 0 : 1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
 
+  # ==============================================
+  # Frontend Admin
+  # ==============================================
   frontend_admin:
     build:
       context: ./frontend-admin
       dockerfile: Dockerfile
+      args:
+        - VITE_API_BASE_URL=http://${SERVER_HOST}:${HTTP_PORT}/api
+        - VITE_API_URL=http://${SERVER_HOST}:${HTTP_PORT}/api
+    container_name: wisse-frontend-admin
     networks:
-      - webnet
+      - wisse-network
+    restart: unless-stopped
 
+  # ==============================================
+  # Frontend Central
+  # ==============================================
   frontend_central:
     build:
       context: ./frontend-central
       dockerfile: Dockerfile
+      args:
+        - VITE_API_BASE_URL=http://${SERVER_HOST}:${HTTP_PORT}/api
+        - VITE_API_URL=http://${SERVER_HOST}:${HTTP_PORT}/api
+    container_name: wisse-frontend-central
     networks:
-      - webnet
+      - wisse-network
+    restart: unless-stopped
 
+  # ==============================================
+  # Frontend Display
+  # ==============================================
   frontend_display:
     build:
       context: ./frontend-display
       dockerfile: Dockerfile
+      args:
+        - VITE_API_BASE_URL=http://${SERVER_HOST}:${HTTP_PORT}/api
+        - VITE_API_URL=http://${SERVER_HOST}:${HTTP_PORT}/api
+    container_name: wisse-frontend-display
     networks:
-      - webnet
+      - wisse-network
+    restart: unless-stopped
 
+  # ==============================================
+  # Nginx Reverse Proxy
+  # ==============================================
   nginx:
     image: nginx:stable-alpine
+    container_name: wisse-nginx
     depends_on:
       - backend
       - frontend_admin
       - frontend_central
       - frontend_display
     ports:
-      - "8080:80"
+      - "${HTTP_PORT:-8080}:80"
+      - "${HTTPS_PORT:-8443}:443"
     volumes:
-      - ./nginx/proxy.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/certs:/etc/nginx/certs:ro
+      - ./nginx/logs:/var/log/nginx
+    environment:
+      - SERVER_HOST=${SERVER_HOST}
+      - BACKEND_PORT=${BACKEND_PORT:-3001}
     networks:
-      - webnet
+      - wisse-network
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
+# ==============================================
+# Volumes
+# ==============================================
 volumes:
   mysql_data:
+    driver: local
 
+# ==============================================
+# Networks
+# ==============================================
 networks:
-  webnet:
+  wisse-network:
     driver: bridge

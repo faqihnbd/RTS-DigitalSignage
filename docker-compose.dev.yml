@@ -1,0 +1,70 @@
+version: "3.8"
+
+# ==============================================
+# Development Docker Compose Configuration
+# ==============================================
+# Usage: docker-compose -f docker-compose.dev.yml up
+
+services:
+  # ==============================================
+  # MySQL Database
+  # ==============================================
+  mysql:
+    image: mysql:8.0
+    container_name: wisse-mysql-dev
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-devpassword}
+      MYSQL_DATABASE: ${DB_NAME:-rts_digitalsignage}
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_dev_data:/var/lib/mysql
+    networks:
+      - wisse-dev-network
+    restart: unless-stopped
+
+  # ==============================================
+  # Backend API (Development with hot reload)
+  # ==============================================
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    container_name: wisse-backend-dev
+    environment:
+      - NODE_ENV=development
+      - PORT=${BACKEND_PORT:-3001}
+      - DB_HOST=mysql
+      - DB_PORT=3306
+      - DB_USER=${DB_USER:-root}
+      - DB_PASS=${DB_PASS:-devpassword}
+      - DB_NAME=${DB_NAME:-rts_digitalsignage}
+      - MIDTRANS_SERVER_KEY=${MIDTRANS_SERVER_KEY}
+      - MIDTRANS_CLIENT_KEY=${MIDTRANS_CLIENT_KEY}
+      - MIDTRANS_IS_PRODUCTION=false
+      - JWT_SECRET=${JWT_SECRET:-dev_jwt_secret}
+      - JWT_EXPIRES_IN=24h
+      - FRONTEND_ADMIN_URL=http://localhost:5173
+      - FRONTEND_CENTRAL_URL=http://localhost:5175
+      - FRONTEND_DISPLAY_URL=http://localhost:5174
+    ports:
+      - "3001:3001"
+    volumes:
+      - ./backend:/usr/src/app
+      - /usr/src/app/node_modules
+      - ./backend/uploads:/usr/src/app/uploads
+      - ./backend/logs:/usr/src/app/logs
+    depends_on:
+      - mysql
+    networks:
+      - wisse-dev-network
+    restart: unless-stopped
+    command: npm run dev
+
+volumes:
+  mysql_dev_data:
+    driver: local
+
+networks:
+  wisse-dev-network:
+    driver: bridge

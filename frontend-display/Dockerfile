@@ -1,20 +1,47 @@
-FROM node:18-alpine AS build
-WORKDIR /app
-COPY package*.json ./
-RUN npm ci
-COPY . .
-RUN npm run build -- --base=/display/ && ls -la /app/dist
+# ==============================================
+# Wisse Digital Signage - Frontend Display Dockerfile
+# ==============================================
 
+# Build stage
+FROM node:18-alpine AS builder
+
+WORKDIR /app
+
+# Copy package files
+COPY package*.json ./
+
+# Install dependencies
+RUN npm ci
+
+# Copy source files
+COPY . .
+
+# Build arguments for environment variables
+ARG VITE_API_BASE_URL
+ARG VITE_API_URL
+
+# Set environment variables for build
+ENV VITE_API_BASE_URL=${VITE_API_BASE_URL}
+ENV VITE_API_URL=${VITE_API_URL}
+
+# Build application
+RUN npm run build
+
+# Production stage
 FROM nginx:stable-alpine
-COPY --from=build /app/dist /usr/share/nginx/html
-RUN echo 'server {' > /etc/nginx/conf.d/default.conf && \
-    echo '  listen 80;' >> /etc/nginx/conf.d/default.conf && \
-    echo '  server_name _;' >> /etc/nginx/conf.d/default.conf && \
-    echo '  root /usr/share/nginx/html;' >> /etc/nginx/conf.d/default.conf && \
-    echo '  index index.html;' >> /etc/nginx/conf.d/default.conf && \
-    echo '  location / {' >> /etc/nginx/conf.d/default.conf && \
-    echo '    try_files $uri $uri/ /index.html;' >> /etc/nginx/conf.d/default.conf && \
-    echo '  }' >> /etc/nginx/conf.d/default.conf && \
-    echo '}' >> /etc/nginx/conf.d/default.conf
+
+# Copy custom nginx config
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+
+# Copy built files from builder
+COPY --from=builder /app/dist /usr/share/nginx/html
+
+# Expose port
 EXPOSE 80
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD wget --quiet --tries=1 --spider http://localhost/ || exit 1
+
+# Start nginx
 CMD ["nginx", "-g", "daemon off;"]

@@ -184,5 +184,5 @@ export default defineConfig({
       },
     },
   },
-  base: "/",
+  base: "/display/",
 });

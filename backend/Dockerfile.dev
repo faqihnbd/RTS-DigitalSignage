@@ -1,5 +1,5 @@
 # ==============================================
-# Wisse Digital Signage - Backend Dockerfile
+# Wisse Digital Signage - Backend Development Dockerfile
 # ==============================================
 
 FROM node:18-bullseye-slim
@@ -18,8 +18,8 @@ RUN apt-get update && \
 # Copy package files
 COPY package*.json ./
 
-# Install dependencies
-RUN npm ci --only=production
+# Install ALL dependencies (including dev dependencies)
+RUN npm install
 
 # Copy application files
 COPY . .
@@ -28,14 +28,10 @@ COPY . .
 RUN mkdir -p uploads logs
 
 # Set environment
-ENV NODE_ENV=production
+ENV NODE_ENV=development
 
 # Expose port
 EXPOSE 3001
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD node -e "require('http').get('http://localhost:3001/', (r) => process.exit(r.statusCode === 200 ? 0 : 1))"
-
-# Start application
-CMD ["node", "index.js"]
+# Start with nodemon for hot reload
+CMD ["npm", "run", "dev"]
