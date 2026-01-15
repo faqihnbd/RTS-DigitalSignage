@@ -677,10 +677,12 @@ body {
 /* Running Text Animation */
 @keyframes marquee {
   0% {
-    transform: translateX(100%);
+    left: 100%;
+    transform: translateY(-50%);
   }
   100% {
-    transform: translateX(-100%);
+    left: 0%;
+    transform: translateX(-100%) translateY(-50%);
   }
 }
 
@@ -688,4 +690,6 @@ body {
   animation: marquee linear infinite;
   display: inline-block;
   white-space: nowrap;
+  position: absolute;
+  top: 50%;
 }

@@ -14,6 +14,7 @@ import {
   Pie,
   Cell,
 } from "recharts";
+import logger from "../utils/logger";
 const API_URL = import.meta.env.VITE_API_URL;
 
 // Komponen daftar tenant
@@ -65,6 +66,7 @@ export default function StatistikGlobal() {
       })
       .then((data) => setStats(data))
       .catch((err) => {
+        logger.logApiError("/api/stats/global", err);
         setStats(null);
         setError("Failed to load statistics");
       })
@@ -80,7 +82,10 @@ export default function StatistikGlobal() {
         return res.json();
       })
       .then((data) => setTenants(Array.isArray(data) ? data : []))
-      .catch(() => setTenantError("Gagal memuat daftar tenant"))
+      .catch((err) => {
+        logger.logApiError("/api/tenants", err);
+        setTenantError("Gagal memuat daftar tenant");
+      })
       .finally(() => setTenantLoading(false));
   }, []);
 
@@ -96,7 +101,10 @@ export default function StatistikGlobal() {
         return res.json();
       })
       .then((data) => setDaily(data || []))
-      .catch(() => setDaily([]));
+      .catch((err) => {
+        logger.logApiError("/api/stats/daily-global", err);
+        setDaily([]);
+      });
   }, [filter]);
 
   const COLORS = ["#0088FE", "#00C49F", "#FFBB28", "#FF8042", "#8884d8"];

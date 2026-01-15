@@ -11,12 +11,16 @@ import {
   XMarkIcon,
   Squares2X2Icon,
 } from "@heroicons/react/24/outline";
+import ExpiredModal from "./ExpiredModal";
+import { isTokenExpired, getTokenTimeRemaining } from "../utils/tokenUtils";
 
 export default function Layout({ children }) {
   const [tenant, setTenant] = useState(null);
   const [packageInfo, setPackageInfo] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [navigating, setNavigating] = useState(false);
+  const [showExpiredModal, setShowExpiredModal] = useState(false);
+  const [expiredMessage, setExpiredMessage] = useState("");
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -29,24 +33,139 @@ export default function Layout({ children }) {
       fetch(`${import.meta.env.VITE_API_BASE_URL}/api/tenants/me`, {
         headers: { Authorization: `Bearer ${token}` },
       })
-        .then((res) => res.json())
-        .then((data) => setTenant(data))
+        .then((res) => {
+          if (res.status === 401 || res.status === 403) {
+            // Token invalid or forbidden - force logout
+            handleLogout();
+            return null;
+          }
+          return res.json();
+        })
+        .then((data) => {
+          if (data) {
+            setTenant(data);
+
+            // Check tenant status
+            if (data.status === "expired") {
+              setExpiredMessage(
+                "Paket Anda telah habis. Silakan hubungi administrator untuk memperpanjang paket atau melakukan upgrade."
+              );
+              setShowExpiredModal(true);
+            } else if (data.status === "suspended") {
+              setExpiredMessage(
+                "Akun Anda telah ditangguhkan oleh administrator. Silakan hubungi support untuk informasi lebih lanjut."
+              );
+              setShowExpiredModal(true);
+            }
+          }
+        })
         .catch(console.error);
 
       // Fetch package info
       fetch(`${import.meta.env.VITE_API_BASE_URL}/api/tenants/storage-info`, {
         headers: { Authorization: `Bearer ${token}` },
       })
-        .then((res) => res.json())
-        .then((data) => setPackageInfo(data))
+        .then((res) => {
+          if (res.status === 401 || res.status === 403) {
+            return null;
+          }
+          return res.json();
+        })
+        .then((data) => {
+          if (data) {
+            setPackageInfo(data);
+          }
+        })
         .catch(console.error);
     }
+  }, []);
+
+  // Periodic status check every 5 minutes
+  useEffect(() => {
+    const token =
+      localStorage.getItem("admin_token") ||
+      sessionStorage.getItem("admin_token");
+
+    if (!token) return;
+
+    const checkStatus = async () => {
+      try {
+        const res = await fetch(
+          `${import.meta.env.VITE_API_BASE_URL}/api/tenants/me`,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+          }
+        );
+
+        if (res.status === 401 || res.status === 403) {
+          handleLogout();
+          return;
+        }
+
+        const data = await res.json();
+        if (data) {
+          if (data.status === "expired") {
+            setExpiredMessage(
+              "Paket Anda telah habis. Silakan hubungi administrator untuk memperpanjang paket atau melakukan upgrade."
+            );
+            setShowExpiredModal(true);
+          } else if (data.status === "suspended") {
+            setExpiredMessage(
+              "Akun Anda telah ditangguhkan oleh administrator. Silakan hubungi support untuk informasi lebih lanjut."
+            );
+            setShowExpiredModal(true);
+          }
+        }
+      } catch (error) {
+        console.error("Status check error:", error);
+      }
+    };
+
+    // Check every 5 minutes
+    const interval = setInterval(checkStatus, 5 * 60 * 1000);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  // Check token expiry every minute
+  useEffect(() => {
+    const token =
+      localStorage.getItem("admin_token") ||
+      sessionStorage.getItem("admin_token");
+
+    if (!token) return;
+
+    const checkTokenExpiry = () => {
+      if (isTokenExpired(token)) {
+        setExpiredMessage(
+          "Sesi Anda telah berakhir (24 jam). Silakan login kembali untuk melanjutkan."
+        );
+        setShowExpiredModal(true);
+      }
+    };
+
+    // Check immediately
+    checkTokenExpiry();
+
+    // Check every minute
+    const interval = setInterval(checkTokenExpiry, 60 * 1000);
+
+    return () => clearInterval(interval);
   }, []);
 
   const handleLogout = () => {
     localStorage.removeItem("admin_token");
     sessionStorage.removeItem("admin_token");
+    localStorage.removeItem("tenant_id");
+    sessionStorage.removeItem("tenant_id");
+    localStorage.removeItem("role");
+    sessionStorage.removeItem("role");
     window.location.href = "/login";
+  };
+
+  const handleExpiredConfirm = () => {
+    setShowExpiredModal(false);
+    handleLogout();
   };
 
   const menuItems = [
@@ -86,12 +205,12 @@ export default function Layout({ children }) {
     //label: "Pembayaran",
     //desc: "Riwayat & Status",
     //},
-    //{
-    //href: "/upgrade",
-    //icon: ArrowUpCircleIcon,
-    //label: "Upgrade",
-    //desc: "Tingkatkan Paket",
-    //},
+    {
+      href: "/upgrade",
+      icon: ArrowUpCircleIcon,
+      label: "Upgrade",
+      desc: "Tingkatkan Paket",
+    },
   ];
 
   return (
@@ -117,11 +236,15 @@ export default function Layout({ children }) {
         {/* Logo & Tenant Info */}
         <div className="p-6 border-b border-gray-100">
           <div className="flex items-center gap-3 mb-4">
-            <div className="w-12 h-12 bg-gradient-to-tr from-blue-600 to-indigo-600 rounded-xl flex items-center justify-center shadow-lg">
-              <span className="text-white font-bold text-xl">📺</span>
+            <div className="w-12 h-12 rounded-xl flex items-center justify-center shadow-lg overflow-hidden bg-white/0">
+              <img
+                src="/Wisse_logo1.png"
+                alt="Wisse Logo"
+                className="w-8 h-8 object-contain"
+              />
             </div>
             <div>
-              <h1 className="font-bold text-xl text-gray-800">RTS Signage</h1>
+              <h1 className="font-bold text-xl text-gray-800">Wisse Signage</h1>
               <p className="text-sm text-gray-500">Digital Signage Platform</p>
             </div>
           </div>
@@ -139,18 +262,6 @@ export default function Layout({ children }) {
                     {tenant.User?.email || tenant.email}
                   </p>
                 </div>
-              </div>
-            </div>
-          )}
-
-          {/* Package Info */}
-          {packageInfo?.package && (
-            <div className="bg-gradient-to-r from-green-50 to-emerald-50 rounded-lg p-3 border-l-4 border-green-400">
-              <div className="flex items-center gap-2">
-                <span className="text-green-600 font-bold text-sm">📦</span>
-                <span className="font-semibold text-green-800 text-sm">
-                  Paket saat ini: {packageInfo.package.name}
-                </span>
               </div>
             </div>
           )}
@@ -230,7 +341,7 @@ export default function Layout({ children }) {
             onClick={handleLogout}
             className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-gradient-to-r from-red-500 to-red-600 text-white rounded-xl font-semibold hover:from-red-600 hover:to-red-700 transition-all duration-200 shadow-lg"
           >
-            <span>🚪</span> Logout
+            Logout
           </button>
         </div>
       </aside>
@@ -280,6 +391,13 @@ export default function Layout({ children }) {
         {/* Page Content */}
         <div className="flex-1 p-6">{children}</div>
       </main>
+
+      {/* Expired/Suspended Modal */}
+      <ExpiredModal
+        isOpen={showExpiredModal}
+        message={expiredMessage}
+        onConfirm={handleExpiredConfirm}
+      />
     </div>
   );
 }

@@ -10,6 +10,7 @@ import {
 } from "@heroicons/react/24/outline";
 import { useNotification } from "../components/NotificationProvider";
 import MidtransPayment from "../components/MidtransPayment";
+import logger from "../utils/logger";
 
 export default function PackageManagement() {
   const [packages, setPackages] = useState([]);
@@ -44,7 +45,7 @@ export default function PackageManagement() {
         setPackages(data);
       }
     } catch (err) {
-      console.error("Error fetching packages:", err);
+      logger.logApiError("/api/packages", err);
       setError("Gagal memuat paket");
     } finally {
       setLoading(false);
@@ -68,7 +69,7 @@ export default function PackageManagement() {
         setCurrentPackage(data);
       }
     } catch (err) {
-      console.error("Error fetching current package:", err);
+      logger.logApiError("/api/packages/current", err);
     }
   };
 
@@ -322,15 +323,15 @@ export default function PackageManagement() {
                 <div className="flex items-center gap-3">
                   <CheckIcon className="h-5 w-5 text-green-500" />
                   <span className="text-gray-700">
-                    {pkg.max_devices === 999 ? "Unlimited" : pkg.max_devices}{" "}
+                    {pkg.max_devices === 999 ? "Custom Kuota" : pkg.max_devices}{" "}
                     Perangkat
                   </span>
                 </div>
                 <div className="flex items-center gap-3">
                   <CheckIcon className="h-5 w-5 text-green-500" />
                   <span className="text-gray-700">
-                    {pkg.storage_gb === 999 ? "Unlimited" : pkg.storage_gb} GB
-                    Storage
+                    {pkg.storage_gb === 999 ? "Custom Kuota" : pkg.storage_gb}{" "}
+                    GB Storage
                   </span>
                 </div>
                 <div className="flex items-center gap-3">
@@ -354,21 +355,26 @@ export default function PackageManagement() {
                   </button>
                 ) : isCustom ? (
                   <a
-                    href="mailto:runtostart@gmail.com?subject=Paket Custom - Digital Signage&body=Halo, saya ingin bertanya tentang paket custom untuk Digital Signage."
+                    href="https://wa.me/6281224767065?text=Halo,%20saya%20ingin%20bertanya%20tentang%20paket%20custom%20untuk%20Digital%20Signage"
+                    target="_blank"
+                    rel="noopener noreferrer"
                     className="block w-full py-3 bg-gradient-to-r from-orange-500 to-red-600 text-white text-center rounded-xl font-semibold hover:from-orange-600 hover:to-red-700 transition-all"
                   >
-                    Hubungi Kami
+                    Hubungi Kami via WhatsApp
                   </a>
                 ) : (
-                  <button
-                    onClick={() => handleUpgrade(pkg)}
-                    disabled={upgrading}
-                    className={`w-full py-3 bg-gradient-to-r ${getPackageColor(
+                  <a
+                    href={`https://wa.me/6281224767065?text=Halo,%20saya%20ingin%20upgrade%20ke%20paket%20${encodeURIComponent(
                       pkg.name
-                    )} text-white rounded-xl font-semibold hover:opacity-90 transition-all disabled:opacity-50`}
+                    )}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className={`block w-full py-3 bg-gradient-to-r ${getPackageColor(
+                      pkg.name
+                    )} text-white text-center rounded-xl font-semibold hover:opacity-90 transition-all`}
                   >
-                    {upgrading ? "Processing..." : "Upgrade"}
-                  </button>
+                    Upgrade via WhatsApp
+                  </a>
                 )}
               </div>
             </div>
@@ -400,8 +406,6 @@ export default function PackageManagement() {
             <ul className="space-y-1">
               <li>• Transfer Bank</li>
               <li>• E-Wallet (GoPay, OVO, Dana)</li>
-              <li>• Virtual Account</li>
-              <li>• Kartu Kredit/Debit</li>
             </ul>
           </div>
         </div>

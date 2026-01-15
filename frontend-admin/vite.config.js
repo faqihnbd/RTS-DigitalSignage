@@ -8,8 +8,8 @@ export default defineConfig({
     VitePWA({
       registerType: "autoUpdate",
       manifest: {
-        name: "RTS Digital Signage Admin",
-        short_name: "SignageAdmin",
+        name: "Wisse Digital Signage Admin",
+        short_name: "WisseAdmin",
         start_url: "/",
         display: "standalone",
         background_color: "#18181b",

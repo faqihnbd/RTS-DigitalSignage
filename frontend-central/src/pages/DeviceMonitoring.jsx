@@ -3,6 +3,7 @@ import * as XLSX from "xlsx";
 import { saveAs } from "file-saver";
 import jsPDF from "jspdf";
 import "jspdf-autotable";
+import logger from "../utils/logger";
 const API_URL = import.meta.env.VITE_API_URL;
 
 export default function DeviceMonitoring() {
@@ -23,7 +24,10 @@ export default function DeviceMonitoring() {
         return res.json();
       })
       .then((data) => setDevices(Array.isArray(data) ? data : []))
-      .catch(() => setDevices([]))
+      .catch((err) => {
+        logger.logApiError("/api/devices", err);
+        setDevices([]);
+      })
       .finally(() => setLoading(false));
   }, []);
 

@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import logger from "../utils/logger";
 const API_URL = import.meta.env.VITE_API_URL;
 
 export default function Login({ onLogin, showNotif }) {
@@ -19,9 +20,15 @@ export default function Login({ onLogin, showNotif }) {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || "Login gagal");
+      logger.logAuth("Login Success", true, {
+        email,
+        userId: data.user?.id,
+        role: data.user?.role,
+      });
       onLogin(data.token, data.user);
       showNotif && showNotif("success", "Login berhasil!");
     } catch (err) {
+      logger.logAuth("Login Failed", false, { email, error: err.message });
       setError(err.message);
       showNotif && showNotif("error", err.message);
     } finally {
@@ -30,15 +37,15 @@ export default function Login({ onLogin, showNotif }) {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-900 via-indigo-800 to-purple-900 relative overflow-hidden">
-      {/* Animated background shapes */}
-      <div className="absolute inset-0 z-0">
-        <div className="absolute -top-32 -left-32 w-96 h-96 bg-gradient-to-tr from-blue-500 via-purple-500 to-pink-500 opacity-30 rounded-full blur-3xl animate-pulse-slow" />
-        <div className="absolute bottom-0 right-0 w-80 h-80 bg-gradient-to-br from-indigo-400 via-blue-400 to-purple-500 opacity-40 rounded-full blur-2xl animate-pulse-fast" />
-        <div
-          className="absolute top-1/2 left-1/2 w-40 h-40 bg-gradient-to-br from-pink-400 via-purple-400 to-blue-400 opacity-30 rounded-full blur-2xl animate-spin-slow"
-          style={{ transform: "translate(-50%, -50%)" }}
-        />
+    <div className="min-h-screen flex items-center justify-center relative overflow-hidden">
+      {/* Background Image with Blur */}
+      <div
+        className="absolute inset-0 z-0 bg-cover bg-center bg-no-repeat"
+        style={{
+          backgroundImage: 'url("/public/bg-login2.png")',
+        }}
+      >
+        <div className="absolute inset-0 backdrop-blur-sm bg-black/20"></div>
       </div>
       <form
         onSubmit={handleSubmit}
@@ -48,24 +55,15 @@ export default function Login({ onLogin, showNotif }) {
         }}
       >
         <div className="mb-8 flex flex-col items-center">
-          <div className="w-16 h-16 rounded-full bg-gradient-to-br from-blue-600 via-indigo-500 to-purple-600 flex items-center justify-center shadow-lg animate-bounce-slow">
-            <svg
-              width="36"
-              height="36"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="white"
-              strokeWidth="2"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M12 4v16m8-8H4"
-              />
-            </svg>
+          <div className="w-16 h-16 rounded-full bg-blue-600 flex items-center justify-center shadow-lg animate-bounce-slow overflow-hidden">
+            <img
+              src="/Wisse_logo1.png"
+              alt="Wisse"
+              className="w-9 h-9 object-contain"
+            />
           </div>
-          <h2 className="text-3xl font-extrabold mt-4 text-blue-900 tracking-widest drop-shadow-lg animate-fade-in">
-            RTS Central Login
+          <h2 className="text-3xl font-extrabold mt-4 text-gray-800 tracking-widest drop-shadow-lg animate-fade-in">
+            Wisse Central Login
           </h2>
         </div>
         {error && (
@@ -92,7 +90,7 @@ export default function Login({ onLogin, showNotif }) {
         />
         <button
           type="submit"
-          className="w-full bg-gradient-to-r from-blue-700 via-indigo-600 to-purple-700 text-white py-3 rounded-xl font-bold text-lg shadow-lg hover:scale-105 hover:from-blue-800 hover:to-purple-800 transition-all duration-200 flex items-center justify-center gap-2 animate-fade-in"
+          className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold text-lg shadow-lg hover:scale-105 hover:from-blue-800 hover:to-purple-800 transition-all duration-200 flex items-center justify-center gap-2 animate-fade-in"
           disabled={loading}
         >
           {loading ? (

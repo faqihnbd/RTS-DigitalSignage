@@ -1,4 +1,4 @@
-# Device Status Real-Time Fix
+Device Status Real-Time Fix
 
 ## Masalah
 

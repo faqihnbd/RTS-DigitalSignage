@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import logger from "../utils/logger";
 const API_URL = import.meta.env.VITE_API_URL;
 
 export default function UserTenantManagement() {
@@ -32,7 +33,8 @@ export default function UserTenantManagement() {
         setUsers(data);
         setLoading(false);
       })
-      .catch(() => {
+      .catch((err) => {
+        logger.logApiError("/api/tenants/:id/users", err);
         setError("Gagal memuat user tenant");
         setLoading(false);
       });

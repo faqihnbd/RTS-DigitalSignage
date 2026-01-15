@@ -1,10 +1,11 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import MediaPlayer from "./MediaPlayer";
 import LayoutPlayer from "./LayoutPlayer";
 import PlaylistManager from "./PlaylistManager";
 import VideoPreloader from "./VideoPreloader";
 import StorageService from "../services/StorageService";
 import { PlayerService } from "../services/PlayerService";
+import logger from "../utils/logger";
 
 const PlayerScreen = ({ playerData, deviceId }) => {
   const [currentPlaylist, setCurrentPlaylist] = useState(null);
@@ -12,6 +13,13 @@ const PlayerScreen = ({ playerData, deviceId }) => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [playerService, setPlayerService] = useState(null);
   const [isInitialized, setIsInitialized] = useState(false);
+  const [playbackError, setPlaybackError] = useState(null);
+  const [errorRetryCount, setErrorRetryCount] = useState(0);
+
+  // Refs for tracking
+  const scheduleCheckIntervalRef = useRef(null);
+  const errorRecoveryTimeoutRef = useRef(null);
+  const lastActivityRef = useRef(Date.now());
 
   // Initialize PlayerService for content download
   useEffect(() => {
@@ -25,7 +33,11 @@ const PlayerScreen = ({ playerData, deviceId }) => {
           setPlayerService(service);
         }
       } catch (error) {
-        console.error("Error initializing PlayerService:", error);
+        logger.logDevice(
+          "PlayerService Init Error",
+          { deviceId, error: error.message },
+          "error"
+        );
       }
     };
 
@@ -46,6 +58,114 @@ const PlayerScreen = ({ playerData, deviceId }) => {
     }
   }, [playerData, playerService, isInitialized]);
 
+  // Periodically check if schedule has changed (every 60 seconds)
+  useEffect(() => {
+    if (
+      !playerData ||
+      !playerData.playlists ||
+      playerData.playlists.length === 0
+    ) {
+      return;
+    }
+
+    const checkSchedule = () => {
+      const activePlaylist = getActivePlaylist();
+
+      // If active playlist changed, switch to it
+      if (
+        activePlaylist &&
+        currentPlaylist &&
+        activePlaylist.id !== currentPlaylist.id
+      ) {
+        logger.logPlaylist("Schedule Playlist Changed", {
+          playlistId: activePlaylist.id,
+        });
+        setCurrentPlaylist(activePlaylist);
+        setCurrentItemIndex(0);
+        setIsPlaying(true);
+      }
+
+      // If no current playlist but there is an active one, initialize it
+      if (activePlaylist && !currentPlaylist) {
+        logger.logPlaylist("Schedule Playlist Init", {
+          playlistId: activePlaylist.id,
+        });
+        setCurrentPlaylist(activePlaylist);
+        setCurrentItemIndex(0);
+        setIsPlaying(true);
+        setIsInitialized(true);
+      }
+    };
+
+    // Check schedule every 60 seconds
+    scheduleCheckIntervalRef.current = setInterval(checkSchedule, 60000);
+
+    return () => {
+      if (scheduleCheckIntervalRef.current) {
+        clearInterval(scheduleCheckIntervalRef.current);
+      }
+    };
+  }, [playerData, currentPlaylist]);
+
+  // Error recovery: if stuck for too long, try to recover
+  useEffect(() => {
+    const checkRecovery = () => {
+      const now = Date.now();
+      const timeSinceLastActivity = now - lastActivityRef.current;
+
+      // If no activity for 5 minutes, try to recover
+      if (timeSinceLastActivity > 300000 && isInitialized) {
+        logger.logAction(
+          "Recovery No Activity",
+          { timeSinceLastActivity },
+          "warn"
+        );
+        handleRecovery();
+      }
+    };
+
+    const recoveryInterval = setInterval(checkRecovery, 60000);
+
+    return () => {
+      clearInterval(recoveryInterval);
+      if (errorRecoveryTimeoutRef.current) {
+        clearTimeout(errorRecoveryTimeoutRef.current);
+      }
+    };
+  }, [isInitialized]);
+
+  const handleRecovery = useCallback(() => {
+    logger.logAction("Recovery Attempt", { retryCount: errorRetryCount });
+
+    const newRetryCount = errorRetryCount + 1;
+    setErrorRetryCount(newRetryCount);
+
+    // If too many retries, reload the page
+    if (newRetryCount > 5) {
+      logger.logAction(
+        "Recovery Max Retries - Reload",
+        { retryCount: newRetryCount },
+        "warn"
+      );
+      window.location.reload();
+      return;
+    }
+
+    // Reset playback state
+    setIsInitialized(false);
+    setPlaybackError(null);
+    setCurrentItemIndex(0);
+
+    // Get active playlist and reinitialize
+    const activePlaylist = getActivePlaylist();
+    if (activePlaylist) {
+      setCurrentPlaylist(activePlaylist);
+      setIsPlaying(true);
+      setIsInitialized(true);
+      lastActivityRef.current = Date.now();
+    }
+  }, [errorRetryCount]);
+
   const initializePlayback = async () => {
     try {
       // Get active playlist based on schedule
@@ -56,12 +176,23 @@ const PlayerScreen = ({ playerData, deviceId }) => {
         setCurrentItemIndex(0);
         setIsPlaying(true);
         setIsInitialized(true); // Mark as initialized
+        lastActivityRef.current = Date.now();
 
         // Cache content if needed
         await cachePlaylistContent(activePlaylist);
       }
     } catch (error) {
-      console.error("Error initializing playback:", error);
+      logger.logAction(
+        "Playback Init Error",
+        { error: error.message },
+        "error"
+      );
+      setPlaybackError(error.message);
+
+      // Schedule retry
+      errorRecoveryTimeoutRef.current = setTimeout(() => {
+        handleRecovery();
+      }, 5000);
     }
   };
 
@@ -103,7 +234,11 @@ const PlayerScreen = ({ playerData, deviceId }) => {
 
       return currentTime >= startTime && currentTime <= endTime;
     } catch (error) {
-      console.error("Error checking schedule:", error);
+      logger.logAction(
+        "Schedule Check Error",
+        { error: error.message },
+        "error"
+      );
       return true; // Default to active if error
     }
   };
@@ -118,20 +253,33 @@ const PlayerScreen = ({ playerData, deviceId }) => {
       const playlistManager = new PlaylistManager(playerService);
       await playlistManager.cachePlaylist(playlist);
     } catch (error) {
-      console.error("Error caching playlist:", error);
+      logger.logPlaylist(
+        "Cache Error",
+        { playlistId: playlist?.id, error: error.message },
+        "error"
+      );
     }
   };
 
-  const handleItemEnd = () => {
+  const handleItemEnd = useCallback(() => {
     if (!currentPlaylist || !currentPlaylist.items) return;
+
+    // Update last activity timestamp
+    lastActivityRef.current = Date.now();
+
+    // Reset error retry count on successful item playback
+    if (errorRetryCount > 0) {
+      setErrorRetryCount(0);
+    }
 
     const nextIndex = (currentItemIndex + 1) % currentPlaylist.items.length;
     setCurrentItemIndex(nextIndex);
-  };
+  }, [currentPlaylist, currentItemIndex, errorRetryCount]);
 
   const handleScreenClick = () => {
     if (!isPlaying) {
       setIsPlaying(true);
+      lastActivityRef.current = Date.now();
     }
   };
 
@@ -162,11 +310,7 @@ const PlayerScreen = ({ playerData, deviceId }) => {
 
   // Debug: tampilkan jika playlist kosong
   if (!playerData.playlists || playerData.playlists.length === 0) {
-    console.warn(
-      "[DEBUG] Tidak ada playlist untuk device",
-      deviceId,
-      playerData
-    );
+    logger.logDevice("No Playlist Assigned", { deviceId }, "warn");
     return (
       <div className="min-h-screen bg-black flex items-center justify-center">
         <div className="text-center text-white">

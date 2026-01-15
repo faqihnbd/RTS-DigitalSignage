@@ -8,6 +8,7 @@ import {
   VideoCameraIcon,
 } from "@heroicons/react/24/outline";
 import { useNotification } from "../components/NotificationProvider";
+import logger from "../utils/logger";
 
 export default function PlaylistItems({ playlistId, onClose }) {
   const [items, setItems] = useState([]);
@@ -47,27 +48,22 @@ export default function PlaylistItems({ playlistId, onClose }) {
         headers: { Authorization: `Bearer ${token}` },
       })
         .then((res) => res.json())
-        .then((data) => setContents(data));
+        .then((data) => {
+          setContents(data);
+        });
     }
   }, [showAdd]);
 
-  // Handle content selection change untuk auto-set duration
+  // Handle content selection change
   function handleContentSelection(contentId) {
     setSelectedContent(contentId);
     if (contentId) {
       const selectedContentObj = contents.find(
         (c) => c.id === parseInt(contentId)
       );
-      if (selectedContentObj) {
-        if (selectedContentObj.duration_sec) {
-          setAddDuration(selectedContentObj.duration_sec.toString());
-        } else if (selectedContentObj.type === "video") {
-          setAddDuration("30"); // default untuk video
-        } else if (selectedContentObj.type === "image") {
-          setAddDuration("10"); // default untuk gambar
-        } else {
-          setAddDuration("15"); // default untuk content lain
-        }
+      if (selectedContentObj && selectedContentObj.type === "image") {
+        // Set default 10 detik untuk image
+        setAddDuration("10");
       }
     }
   }
@@ -79,6 +75,24 @@ export default function PlaylistItems({ playlistId, onClose }) {
     const token =
       localStorage.getItem("admin_token") ||
       sessionStorage.getItem("admin_token");
+
+    // Get selected content untuk cek type
+    const selectedContentObj = contents.find(
+      (c) => c.id === parseInt(selectedContent)
+    );
+
+    const payload = {
+      content_id: selectedContent,
+      order: items.length + 1,
+      orientation: addOrientation,
+      transition: addTransition,
+    };
+
+    // Hanya tambahkan duration_sec jika konten adalah image
+    if (selectedContentObj && selectedContentObj.type === "image") {
+      payload.duration_sec = parseInt(addDuration) || 10;
+    }
+
     fetch(
       `${import.meta.env.VITE_API_BASE_URL}/api/playlists/${playlistId}/items`,
       {
@@ -87,13 +101,7 @@ export default function PlaylistItems({ playlistId, onClose }) {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({
-          content_id: selectedContent,
-          order: items.length + 1,
-          orientation: addOrientation,
-          transition: addTransition,
-          duration_sec: parseInt(addDuration) || 10,
-        }),
+        body: JSON.stringify(payload),
       }
     ).then(() => {
       setAdding(false);
@@ -236,15 +244,9 @@ export default function PlaylistItems({ playlistId, onClose }) {
     setEditingItem(item.id);
     setEditOrientation(item.orientation || "landscape");
     setEditTransition(item.transition || "fade");
-    // Set durasi dari item atau default berdasarkan type
-    if (item.duration_sec) {
-      setEditDuration(item.duration_sec.toString());
-    } else if (item.Content && item.Content.type === "video") {
-      setEditDuration("30"); // default 30 detik untuk video
-    } else if (item.Content && item.Content.type === "image") {
-      setEditDuration("10"); // default 10 detik untuk gambar
-    } else {
-      setEditDuration("15"); // default 15 detik untuk content lain
+    // Set durasi hanya untuk image
+    if (item.content && item.content.type === "image") {
+      setEditDuration(item.duration_sec ? item.duration_sec.toString() : "10");
     }
   }
 
@@ -253,6 +255,24 @@ export default function PlaylistItems({ playlistId, onClose }) {
     const token =
       localStorage.getItem("admin_token") ||
       sessionStorage.getItem("admin_token");
+
+    // Find current item untuk cek type
+    const currentItem = items.find((item) => item.id === editingItem);
+
+    const payload = {
+      orientation: editOrientation,
+      transition: editTransition,
+    };
+
+    // Hanya tambahkan duration_sec jika konten adalah image
+    if (
+      currentItem &&
+      currentItem.content &&
+      currentItem.content.type === "image"
+    ) {
+      payload.duration_sec = parseInt(editDuration) || 10;
+    }
+
     fetch(
       `${
         import.meta.env.VITE_API_BASE_URL
@@ -263,11 +283,7 @@ export default function PlaylistItems({ playlistId, onClose }) {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({
-          orientation: editOrientation,
-          transition: editTransition,
-          duration_sec: parseInt(editDuration) || 10,
-        }),
+        body: JSON.stringify(payload),
       }
     ).then(() => {
       setEditingItem(null);
@@ -316,8 +332,6 @@ export default function PlaylistItems({ playlistId, onClose }) {
         order: index + 1,
       }));
 
-      console.log("[SAVE-ORDER] Sending batch update:", updateData);
-
       const response = await fetch(
         `${
           import.meta.env.VITE_API_BASE_URL
@@ -334,7 +348,6 @@ export default function PlaylistItems({ playlistId, onClose }) {
 
       if (response.ok) {
         const result = await response.json();
-        console.log("[SAVE-ORDER] Batch update successful:", result);
 
         // Update local state with server response
         if (result.items) {
@@ -350,7 +363,7 @@ export default function PlaylistItems({ playlistId, onClose }) {
         throw new Error("Failed to save order");
       }
     } catch (error) {
-      console.error("Error saving order:", error);
+      logger.logApiError("/api/playlist-items/reorder (POST)", error);
       showError("Gagal menyimpan urutan playlist");
     } finally {
       setSaving(false);
@@ -440,7 +453,7 @@ export default function PlaylistItems({ playlistId, onClose }) {
                 ))}
               </select>
             </div>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-2 gap-2">
               <div>
                 <label className="block text-xs font-medium mb-1">
                   Orientasi
@@ -470,21 +483,50 @@ export default function PlaylistItems({ playlistId, onClose }) {
                   <option value="none">None</option>
                 </select>
               </div>
-              <div>
-                <label className="block text-xs font-medium mb-1">
-                  Durasi (detik)
-                </label>
-                <input
-                  type="number"
-                  min="1"
-                  max="300"
-                  value={addDuration}
-                  onChange={(e) => setAddDuration(e.target.value)}
-                  className="input input-bordered input-sm w-full"
-                  placeholder="10"
-                />
-              </div>
             </div>
+            {/* Tampilkan durasi video (read-only) */}
+            {selectedContent &&
+              contents.find((c) => c.id === parseInt(selectedContent))?.type ===
+                "video" && (
+                <div>
+                  <label className="block text-xs font-medium mb-1">
+                    Durasi Video
+                  </label>
+                  <input
+                    type="text"
+                    value={`${
+                      contents.find((c) => c.id === parseInt(selectedContent))
+                        ?.duration_sec || 0
+                    } detik`}
+                    className="input input-bordered input-sm w-full bg-gray-100"
+                    readOnly
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Durasi video terdeteksi otomatis dan tidak dapat diubah
+                  </p>
+                </div>
+              )}
+            {/* Tampilkan input durasi hanya untuk image */}
+            {selectedContent &&
+              contents.find((c) => c.id === parseInt(selectedContent))?.type ===
+                "image" && (
+                <div>
+                  <label className="block text-xs font-medium mb-1">
+                    Durasi Tampil (detik)
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={addDuration}
+                    onChange={(e) => setAddDuration(e.target.value)}
+                    className="input input-bordered input-sm w-full"
+                    placeholder="10"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Atur berapa lama gambar ditampilkan (dalam detik)
+                  </p>
+                </div>
+              )}
             <div className="flex gap-2">
               <button
                 type="submit"
@@ -519,7 +561,7 @@ export default function PlaylistItems({ playlistId, onClose }) {
                 {editingItem === item.id ? (
                   // Edit form for this item
                   <form onSubmit={handleSaveEdit} className="space-y-3">
-                    <div className="grid grid-cols-3 gap-2">
+                    <div className="grid grid-cols-2 gap-2">
                       <div>
                         <label className="block text-xs font-medium mb-1">
                           Orientasi
@@ -549,21 +591,44 @@ export default function PlaylistItems({ playlistId, onClose }) {
                           <option value="none">None</option>
                         </select>
                       </div>
+                    </div>
+                    {/* Tampilkan durasi video (read-only) */}
+                    {item.content && item.content.type === "video" && (
                       <div>
                         <label className="block text-xs font-medium mb-1">
-                          Durasi (detik)
+                          Durasi Video
+                        </label>
+                        <input
+                          type="text"
+                          value={`${item.content.duration_sec || 0} detik`}
+                          className="input input-bordered input-sm w-full bg-gray-100"
+                          readOnly
+                        />
+                        <p className="text-xs text-gray-500 mt-1">
+                          Durasi video terdeteksi otomatis dan tidak dapat
+                          diubah
+                        </p>
+                      </div>
+                    )}
+                    {/* Tampilkan input durasi hanya untuk image */}
+                    {item.content && item.content.type === "image" && (
+                      <div>
+                        <label className="block text-xs font-medium mb-1">
+                          Durasi Tampil (detik)
                         </label>
                         <input
                           type="number"
                           min="1"
-                          max="300"
                           value={editDuration}
                           onChange={(e) => setEditDuration(e.target.value)}
                           className="input input-bordered input-sm w-full"
                           placeholder="10"
                         />
+                        <p className="text-xs text-gray-500 mt-1">
+                          Atur berapa lama gambar ditampilkan (dalam detik)
+                        </p>
                       </div>
-                    </div>
+                    )}
                     <div className="flex gap-2 justify-end">
                       <button
                         type="button"
@@ -592,9 +657,23 @@ export default function PlaylistItems({ playlistId, onClose }) {
                         {item.content?.filename || "-"}
                       </div>
                       <div className="text-xs text-gray-500 flex gap-4">
-                        <span>📐 {item.orientation || "landscape"}</span>
-                        <span>✨ {item.transition || "fade"}</span>
-                        <span>⏱️ {item.duration_sec || 10}s</span>
+                        <span>
+                          {"📐"} {item.orientation || "landscape"}
+                        </span>
+                        <span>
+                          {"✨"} {item.transition || "fade"}
+                        </span>
+                        {/* Tampilkan durasi untuk video dan image */}
+                        {item.content?.type === "video" && (
+                          <span>
+                            {"⏱️"} {item.content.duration_sec || 0}s
+                          </span>
+                        )}
+                        {item.content?.type === "image" && (
+                          <span>
+                            {"⏱️"} {item.duration_sec || 10}s
+                          </span>
+                        )}
                       </div>
                     </div>
                     <button

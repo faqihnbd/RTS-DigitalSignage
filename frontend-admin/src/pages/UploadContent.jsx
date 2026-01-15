@@ -8,6 +8,7 @@ import {
   ChartBarIcon,
 } from "@heroicons/react/24/outline";
 import { useNotification } from "../components/NotificationProvider";
+import logger from "../utils/logger";
 
 export default function UploadContent() {
   const [contents, setContents] = useState([]);
@@ -62,9 +63,9 @@ export default function UploadContent() {
     const file = fileInputRef.current.files[0];
     if (!file) return;
 
+    setError(""); // Clear error immediately when starting upload
     setUploading(true);
     setUploadProgress(0);
-    setError("");
 
     const token =
       localStorage.getItem("admin_token") ||
@@ -106,6 +107,9 @@ export default function UploadContent() {
           fetchContents();
           fetchStorageInfo(); // Update storage info after upload
           fileInputRef.current.value = "";
+          logger.logContent("Content Uploaded", {
+            filename: fileInputRef.current?.files?.[0]?.name,
+          });
           success("File berhasil diupload!");
         }, 500);
       })
@@ -114,6 +118,11 @@ export default function UploadContent() {
         setError(err.message);
         setUploading(false);
         setUploadProgress(0);
+        // IMPORTANT: Reset file input after error so user can retry with same file
+        if (fileInputRef.current) {
+          fileInputRef.current.value = "";
+        }
+        logger.logApiError("/api/contents (upload)", err);
         showError(err.message || "Upload gagal");
       });
   }
@@ -183,11 +192,18 @@ export default function UploadContent() {
       headers: { Authorization: `Bearer ${token}` },
     })
       .then(() => {
+        setError(""); // Clear any previous error messages
         fetchContents();
         fetchStorageInfo(); // Update storage info after deletion
+        logger.logContent("Content Deleted", { contentId: id });
         success("Konten berhasil dihapus!");
       })
       .catch(() => {
+        logger.logApiError(
+          "/api/contents (delete)",
+          new Error("Delete failed"),
+          { contentId: id }
+        );
         showError("Gagal menghapus konten!");
       });
   }
@@ -235,19 +251,29 @@ export default function UploadContent() {
           </div>
           {storageInfo && (
             <div className="bg-white/80 backdrop-blur-sm rounded-xl p-4 border border-gray-200 shadow-sm">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center justify-between gap-2 mb-2">
                 <span className="text-sm text-gray-600">Storage</span>
+                <button
+                  onClick={fetchStorageInfo}
+                  className="text-xs text-blue-600 hover:text-blue-800 underline"
+                  title="Refresh storage info"
+                >
+                  Refresh
+                </button>
               </div>
               <p className="text-sm font-bold text-gray-800">
                 {formatFileSize(storageInfo.usedStorage)} /{" "}
                 {formatFileSize(storageInfo.storageLimit)}
               </p>
+              <p className="text-xs text-gray-600 mt-1">
+                {storageInfo.usagePercentage.toFixed(1)}% used
+              </p>
               <div className="w-full bg-gray-200 rounded-full h-2 mt-2">
                 <div
-                  className={`h-2 rounded-full ${
-                    storageInfo.usagePercentage > 90
+                  className={`h-2 rounded-full transition-all ${
+                    storageInfo.usagePercentage > 95
                       ? "bg-red-500"
-                      : storageInfo.usagePercentage > 70
+                      : storageInfo.usagePercentage > 85
                       ? "bg-yellow-500"
                       : "bg-green-500"
                   }`}
@@ -256,7 +282,7 @@ export default function UploadContent() {
                   }}
                 ></div>
               </div>
-              <p className="text-xs text-gray-500 mt-1">
+              <p className="text-xs text-gray-500 mt-2">
                 {storageInfo.packageName} Package
               </p>
             </div>

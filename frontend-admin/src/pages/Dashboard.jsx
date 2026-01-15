@@ -15,6 +15,7 @@ import {
   CurrencyDollarIcon,
   EyeIcon,
 } from "@heroicons/react/24/outline";
+import logger from "../utils/logger";
 
 export default function Dashboard() {
   const [stats, setStats] = useState({
@@ -29,28 +30,31 @@ export default function Dashboard() {
   // Quick login function for testing
   const quickLogin = async () => {
     try {
-      const response = await fetch("http://localhost:3000/api/auth/login", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          email: "test@dashboard.com",
-          password: "testpass123",
-        }),
-      });
+      const response = await fetch(
+        `${import.meta.env.VITE_API_BASE_URL || ""}/api/auth/login`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            email: "test@dashboard.com",
+            password: "testpass123",
+          }),
+        }
+      );
 
       if (response.ok) {
         const data = await response.json();
         localStorage.setItem("token", data.token);
-        console.log("Quick login successful, token saved");
+        logger.logAuth("Quick Login Success", { email: "test@dashboard.com" });
         // Refresh the page to fetch data with new token
         window.location.reload();
       } else {
-        console.error("Quick login failed");
+        logger.logAuth("Quick Login Failed", {}, "error");
       }
     } catch (err) {
-      console.error("Quick login error:", err);
+      logger.logApiError("/api/auth/login (quickLogin)", err);
     }
   };
 
@@ -59,22 +63,20 @@ export default function Dashboard() {
     const fetchDashboardStats = async () => {
       try {
         const token = localStorage.getItem("token");
-        console.log("=== Dashboard Data Fetch Debug ===");
-        console.log("Token found:", !!token);
-        console.log(
-          "Token preview:",
-          token ? token.substring(0, 50) + "..." : "none"
-        );
 
         if (!token) {
-          console.log("No token found, please login");
+          logger.logAuth(
+            "Dashboard - No Token",
+            { message: "Token not found" },
+            "warn"
+          );
           setError("No authentication token found. Please login.");
           setLoading(false);
           return;
         }
 
         const response = await fetch(
-          "http://localhost:3000/api/stats/dashboard",
+          `${import.meta.env.VITE_API_BASE_URL || ""}/api/stats/dashboard`,
           {
             headers: {
               Authorization: `Bearer ${token}`,
@@ -83,21 +85,14 @@ export default function Dashboard() {
           }
         );
 
-        console.log("Dashboard stats response status:", response.status);
-        console.log("Dashboard stats response ok:", response.ok);
-
         if (!response.ok) {
           const errorText = await response.text();
-          console.log("Error response text:", errorText);
           throw new Error(
             `HTTP error! status: ${response.status} - ${errorText}`
           );
         }
 
         const data = await response.json();
-        console.log("Dashboard stats data received:", data);
-        console.log("Revenue value:", data.totalRevenue);
-        console.log("Revenue type:", typeof data.totalRevenue);
 
         setStats({
           totalContent: data.totalContent || 0,
@@ -106,16 +101,9 @@ export default function Dashboard() {
           totalRevenue: data.totalRevenue || 0,
         });
 
-        console.log("Stats state updated with:", {
-          totalContent: data.totalContent || 0,
-          totalPlaylists: data.totalPlaylists || 0,
-          activeDevices: data.activeDevices || 0,
-          totalRevenue: data.totalRevenue || 0,
-        });
-
         setError(null);
       } catch (err) {
-        console.error("Error fetching dashboard stats:", err);
+        logger.logApiError("/api/stats/dashboard", err);
         setError(`Failed to load dashboard data: ${err.message}`);
         // Fallback to default values if API fails
         setStats({

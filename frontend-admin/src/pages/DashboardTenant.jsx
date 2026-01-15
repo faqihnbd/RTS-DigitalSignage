@@ -13,6 +13,7 @@ import {
   SignalIcon,
   SignalSlashIcon,
 } from "@heroicons/react/24/outline";
+import logger from "../utils/logger";
 
 export default function Dashboard() {
   const [tenant, setTenant] = useState(null);
@@ -142,7 +143,7 @@ export default function Dashboard() {
 
       setPackageInfo(packageData);
     } catch (error) {
-      console.error("Error fetching dashboard stats:", error);
+      logger.logApiError("Dashboard Stats", error);
     }
   };
 
@@ -372,34 +373,6 @@ export default function Dashboard() {
               </div>
               <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center">
                 <ListBulletIcon className="h-6 w-6 text-purple-600" />
-              </div>
-            </div>
-          </div>
-
-          {/* Payments */}
-          <div className="bg-white/70 backdrop-blur-sm rounded-xl p-6 shadow-xl border border-white/20">
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="flex items-center space-x-2 mb-2">
-                  <CreditCardIcon className="h-6 w-6 text-yellow-600" />
-                  <h3 className="text-lg font-semibold text-gray-800">
-                    {stats.payments.pending + stats.payments.completed}
-                  </h3>
-                </div>
-                <p className="text-sm text-gray-600 font-medium">
-                  Total Payments
-                </p>
-                <div className="flex items-center space-x-4 mt-2 text-xs">
-                  <span className="text-green-600 font-medium">
-                    {stats.payments.completed} Paid
-                  </span>
-                  <span className="text-yellow-600 font-medium">
-                    {stats.payments.pending} Pending
-                  </span>
-                </div>
-              </div>
-              <div className="w-12 h-12 bg-yellow-100 rounded-lg flex items-center justify-center">
-                <CreditCardIcon className="h-6 w-6 text-yellow-600" />
               </div>
             </div>
           </div>

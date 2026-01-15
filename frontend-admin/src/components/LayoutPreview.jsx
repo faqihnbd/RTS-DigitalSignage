@@ -96,9 +96,7 @@ export default function LayoutPreview({ layout, onClose }) {
         const getVideoUrl = (content) => {
           if (!content?.filename) return null;
           const baseUrl =
-            import.meta.env.VITE_API_BASE_URL ||
-            import.meta.env.VITE_API_URL ||
-            "http://localhost:3000";
+            import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL;
           return `${baseUrl}/uploads/${content.filename}`;
         };
 
@@ -205,9 +203,7 @@ export default function LayoutPreview({ layout, onClose }) {
         const getImageUrl = (content) => {
           if (!content?.filename) return null;
           const baseUrl =
-            import.meta.env.VITE_API_BASE_URL ||
-            import.meta.env.VITE_API_URL ||
-            "http://localhost:3000";
+            import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL;
           return `${baseUrl}/uploads/${content.filename}`;
         };
 
@@ -279,7 +275,8 @@ export default function LayoutPreview({ layout, onClose }) {
                   });
                   // Try alternative URL construction
                   const altUrl = `${
-                    import.meta.env.VITE_API_BASE_URL || "http://localhost:3000"
+                    import.meta.env.VITE_API_BASE_URL ||
+                    import.meta.env.VITE_API_URL
                   }/api/content/${zone.content.id}/file`;
                   console.log("Trying alternative URL:", altUrl);
                   e.target.src = altUrl;
@@ -312,14 +309,22 @@ export default function LayoutPreview({ layout, onClose }) {
         if (isRunningText) {
           return (
             <div
-              className="w-full h-full overflow-hidden flex items-center"
+              className="w-full h-full overflow-hidden relative flex items-center"
               style={{
                 backgroundColor: zone.settings?.background_color || "#ffffff",
-                color: zone.settings?.text_color || "#000000",
-                fontSize: zone.settings?.font_size || "16px",
               }}
             >
-              <div className="animate-marquee whitespace-nowrap">
+              <div
+                className="absolute whitespace-nowrap"
+                style={{
+                  left: 0,
+                  color: zone.settings?.text_color || "#000000",
+                  fontSize: zone.settings?.font_size || "16px",
+                  animation: `marquee-slide ${
+                    zone.settings?.running_speed || 10
+                  }s linear infinite`,
+                }}
+              >
                 {textContent}
               </div>
             </div>
@@ -462,8 +467,7 @@ export default function LayoutPreview({ layout, onClose }) {
                 if (!content?.filename) return null;
                 const baseUrl =
                   import.meta.env.VITE_API_BASE_URL ||
-                  import.meta.env.VITE_API_URL ||
-                  "http://localhost:3000";
+                  import.meta.env.VITE_API_URL;
                 return `${baseUrl}/uploads/${content.filename}`;
               };
 
@@ -512,8 +516,7 @@ export default function LayoutPreview({ layout, onClose }) {
                 if (!content?.filename) return null;
                 const baseUrl =
                   import.meta.env.VITE_API_BASE_URL ||
-                  import.meta.env.VITE_API_URL ||
-                  "http://localhost:3000";
+                  import.meta.env.VITE_API_URL;
                 return `${baseUrl}/uploads/${content.filename}`;
               };
 
@@ -536,7 +539,7 @@ export default function LayoutPreview({ layout, onClose }) {
                         // Try alternative URL
                         const altUrl = `${
                           import.meta.env.VITE_API_BASE_URL ||
-                          "http://localhost:3000"
+                          import.meta.env.VITE_API_URL
                         }/api/content/${content.id}/file`;
                         console.log(
                           "Trying alternative URL for playlist image:",
@@ -627,9 +630,7 @@ export default function LayoutPreview({ layout, onClose }) {
           const getMultiContentUrl = (content) => {
             if (!content?.filename) return null;
             const baseUrl =
-              import.meta.env.VITE_API_BASE_URL ||
-              import.meta.env.VITE_API_URL ||
-              "http://localhost:3000";
+              import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL;
             return `${baseUrl}/uploads/${content.filename}`;
           };
 
@@ -908,6 +909,15 @@ export default function LayoutPreview({ layout, onClose }) {
         @keyframes marquee {
           0% {
             transform: translateX(100%);
+          }
+          100% {
+            transform: translateX(-100%);
+          }
+        }
+
+        @keyframes marquee-slide {
+          0% {
+            transform: translateX(100vw);
           }
           100% {
             transform: translateX(-100%);

@@ -7,6 +7,7 @@ const {
   Playlist,
   DevicePlaylist,
 } = require("../models");
+const logger = require("../utils/logger");
 const router = express.Router();
 
 // Assign playlist to device
@@ -215,7 +216,7 @@ router.get("/stats", async (req, res) => {
       uptime: uptime,
     });
   } catch (error) {
-    console.error("Stats endpoint error:", error);
+    logger.logError(error, req, { action: "Get Device Stats" });
     res.status(500).json({ message: "Internal server error" });
   }
 });

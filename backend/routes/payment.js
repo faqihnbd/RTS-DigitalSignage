@@ -1,6 +1,7 @@
 const express = require("express");
 const { Payment, Package, Tenant } = require("../models");
 const { snap, coreApi } = require("../config/midtrans");
+const logger = require("../utils/logger");
 const router = express.Router();
 
 // Only super admin or tenant admin for their tenant
@@ -166,7 +167,10 @@ router.post("/midtrans", async (req, res) => {
       payment: payment,
     });
   } catch (err) {
-    console.error("Midtrans payment creation error:", err);
+    logger.logPayment("Midtrans Payment Creation Error", req, {
+      error: err.message,
+    });
+    logger.logError(err, req, { action: "Create Midtrans Payment" });
     res.status(500).json({ message: err.message });
   }
 });
@@ -226,13 +230,16 @@ router.post("/midtrans/notification", async (req, res) => {
         ); // 30 days
         await tenant.save();
       } catch (upgradeError) {
-        console.error(`Error upgrading package for tenant:`, upgradeError);
+        logger.logError(upgradeError, req, {
+          action: "Upgrade Package for Tenant",
+          tenantId: payment.tenant_id,
+        });
       }
     }
 
     res.json({ message: "Notification processed successfully" });
   } catch (err) {
-    console.error("Midtrans notification error:", err);
+    logger.logError(err, req, { action: "Midtrans Notification Processing" });
     res.status(500).json({ message: err.message });
   }
 });
@@ -276,10 +283,10 @@ router.get("/midtrans/status/:order_id", async (req, res) => {
           ); // 30 days
           await tenant.save();
         } catch (upgradeError) {
-          console.error(
-            `Error upgrading package via status check:`,
-            upgradeError
-          );
+          logger.logError(upgradeError, req, {
+            action: "Upgrade Package via Status Check",
+            tenantId: payment.tenant_id,
+          });
         }
       }
     }
@@ -289,7 +296,10 @@ router.get("/midtrans/status/:order_id", async (req, res) => {
       midtrans_status: statusResponse,
     });
   } catch (err) {
-    console.error("Check payment status error:", err);
+    logger.logError(err, req, {
+      action: "Check Payment Status",
+      orderId: req.params.order_id,
+    });
     res.status(500).json({ message: err.message });
   }
 });

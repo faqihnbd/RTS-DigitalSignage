@@ -3,6 +3,11 @@ const { Content, User, Tenant } = require("../models");
 const upload = require("./multerUpload");
 const { checkStorageQuota, getStorageInfo } = require("./storageMiddleware");
 const { getFileDuration } = require("../utils/durationUtils");
+const {
+  cleanupExcessStorage,
+  getStorageUsage,
+} = require("../utils/storageCleanup");
+const logger = require("../utils/logger");
 const fs = require("fs");
 const path = require("path");
 const router = express.Router();
@@ -46,7 +51,7 @@ router.get("/storage-info", async (req, res) => {
     }
     res.json(storageInfo);
   } catch (error) {
-    console.error("Get storage info error:", error);
+    logger.logError(error, req, { action: "Get Storage Info" });
     res.status(500).json({ message: "Error retrieving storage info" });
   }
 });
@@ -72,9 +77,16 @@ router.post("/", upload.single("file"), checkStorageQuota, async (req, res) => {
     let duration_sec = null;
     if (req.file && type === "video") {
       try {
-        duration_sec = await getFileDuration(req.file.path);
+        duration_sec = await getFileDuration(req.file.path, req.file.mimetype);
+        logger.logContent("Video Duration Detected", req, {
+          duration: duration_sec,
+          filename: req.file.originalname,
+        });
       } catch (error) {
-        console.error("Error getting video duration:", error);
+        logger.logError(error, req, {
+          action: "Get Video Duration",
+          filename: req.file.originalname,
+        });
         // Continue without duration if detection fails
       }
     }
@@ -83,12 +95,28 @@ router.post("/", upload.single("file"), checkStorageQuota, async (req, res) => {
       tenant_id,
       user_id: req.user.id,
       type,
-      filename: req.file ? req.file.originalname : null,
-      url: req.file ? `/uploads/${req.file.originalname}` : null,
+      filename: req.file ? req.file.filename : null, // Use multer's unique filename, not originalname
+      url: req.file ? `/uploads/${req.file.filename}` : null, // Use unique filename in URL
       size: fileSize,
       duration_sec,
     });
-    res.status(201).json(content);
+
+    // Prepare response
+    const response = {
+      ...content.toJSON(),
+    };
+
+    // Add storage cleanup info if it occurred during upload
+    if (req.storageCleanup) {
+      response.storageCleanup = {
+        message: "Auto-cleanup performed to make room for this upload",
+        deletedCount: req.storageCleanup.deletedCount,
+        freedSpaceGB: req.storageCleanup.freedSpaceGB,
+        deletedFiles: req.storageCleanup.deletedFiles,
+      };
+    }
+
+    res.status(201).json(response);
   } catch (err) {
     res.status(400).json({ message: err.message });
   }
@@ -131,12 +159,59 @@ router.put("/:id", async (req, res) => {
 router.delete("/:id", async (req, res) => {
   if (!canManageContent(req))
     return res.status(403).json({ message: "Forbidden" });
-  const content = await Content.findOne({
-    where: { id: req.params.id, tenant_id: req.user.tenant_id },
-  });
-  if (!content) return res.status(404).json({ message: "Not found" });
-  await content.destroy();
-  res.json({ message: "Deleted" });
+
+  try {
+    const content = await Content.findOne({
+      where: { id: req.params.id, tenant_id: req.user.tenant_id },
+    });
+
+    if (!content) return res.status(404).json({ message: "Not found" });
+
+    const filename = content.filename;
+    const size = content.size;
+
+    logger.logContent("Deleting Content", req, {
+      contentId: req.params.id,
+      filename,
+      sizeMB: (size / (1024 * 1024)).toFixed(2),
+    });
+
+    // Delete from database first
+    await content.destroy();
+
+    logger.logContent("Database Record Deleted", req, {
+      contentId: req.params.id,
+    });
+
+    // Delete physical file if exists
+    if (filename) {
+      const filePath = path.join(__dirname, "../uploads", filename);
+      try {
+        if (fs.existsSync(filePath)) {
+          fs.unlinkSync(filePath);
+          logger.logContent("Physical File Deleted", req, { filePath });
+        }
+      } catch (fileError) {
+        logger.logError(fileError, req, {
+          action: "Delete Physical File",
+          filePath,
+        });
+        // Continue anyway - database is the source of truth
+      }
+    }
+
+    res.json({
+      message: "Deleted",
+      filename,
+      size: (size / (1024 * 1024)).toFixed(2) + "MB",
+    });
+  } catch (error) {
+    logger.logError(error, req, {
+      action: "Delete Content",
+      contentId: req.params.id,
+    });
+    res.status(500).json({ message: "Error deleting content" });
+  }
 });
 
 // GET /content/file/:id - Serve content files for player
@@ -196,7 +271,10 @@ router.get("/file/:id", async (req, res) => {
       stream.pipe(res);
     }
   } catch (error) {
-    console.error("Error serving content file:", error);
+    logger.logError(error, req, {
+      action: "Serve Content File",
+      filename: req.params.filename,
+    });
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -262,7 +340,10 @@ router.get("/:id/file", async (req, res) => {
       stream.pipe(res);
     }
   } catch (error) {
-    console.error("Error serving content file by ID:", error);
+    logger.logError(error, req, {
+      action: "Serve Content File by ID",
+      contentId: req.params.id,
+    });
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -283,8 +364,65 @@ router.get("/public/:id", async (req, res) => {
 
     res.json(content);
   } catch (error) {
-    console.error("Error getting public content:", error);
+    logger.logError(error, req, {
+      action: "Get Public Content",
+      contentId: req.params.id,
+    });
     res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// POST /contents/cleanup-storage - Manual trigger storage cleanup
+router.post("/cleanup-storage", async (req, res) => {
+  if (!canManageContent(req))
+    return res.status(403).json({ message: "Forbidden" });
+
+  try {
+    const tenantId = req.user.tenant_id;
+    logger.logContent("Manual Storage Cleanup Started", req, { tenantId });
+
+    const cleanupResult = await cleanupExcessStorage(tenantId);
+
+    logger.logContent("Manual Storage Cleanup Completed", req, {
+      tenantId,
+      result: cleanupResult,
+    });
+
+    res.json({
+      success: true,
+      message: "Storage cleanup completed",
+      result: cleanupResult,
+    });
+  } catch (error) {
+    logger.logError(error, req, { action: "Manual Storage Cleanup" });
+    res.status(500).json({
+      success: false,
+      message: "Error during storage cleanup",
+      error: error.message,
+    });
+  }
+});
+
+// GET /contents/storage-usage - Get detailed storage usage
+router.get("/storage-usage", async (req, res) => {
+  if (!canManageContent(req))
+    return res.status(403).json({ message: "Forbidden" });
+
+  try {
+    const tenantId = req.user.tenant_id;
+    const storageUsage = await getStorageUsage(tenantId);
+
+    res.json({
+      success: true,
+      storage: storageUsage,
+    });
+  } catch (error) {
+    logger.logError(error, req, { action: "Get Storage Usage" });
+    res.status(500).json({
+      success: false,
+      message: "Error getting storage usage",
+      error: error.message,
+    });
   }
 });
 

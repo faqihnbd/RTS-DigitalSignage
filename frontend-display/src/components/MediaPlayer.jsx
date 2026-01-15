@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import LoadingOverlay from "./LoadingOverlay";
+import logger from "../utils/logger";
 
 const MediaPlayer = ({ item, onEnded, isPlaying }) => {
   const [isLoading, setIsLoading] = useState(true);
@@ -15,6 +16,36 @@ const MediaPlayer = ({ item, onEnded, isPlaying }) => {
   const intervalRef = useRef(null);
   const preloadVideoRef = useRef(null);
   const loadingTimeoutRef = useRef(null);
+  // Track all blob URLs created for proper cleanup (prevent memory leaks)
+  const blobUrlsRef = useRef(new Set());
+  const itemIdRef = useRef(null);
+
+  // Helper to create and track blob URLs
+  const createTrackedBlobUrl = useCallback((blob) => {
+    const url = URL.createObjectURL(blob);
+    blobUrlsRef.current.add(url);
+    return url;
+  }, []);
+
+  // Helper to revoke and untrack blob URL
+  const revokeTrackedBlobUrl = useCallback((url) => {
+    if (url && url.startsWith("blob:")) {
+      URL.revokeObjectURL(url);
+      blobUrlsRef.current.delete(url);
+    }
+  }, []);
+
+  // Cleanup all tracked blob URLs
+  const cleanupAllBlobUrls = useCallback(() => {
+    blobUrlsRef.current.forEach((url) => {
+      try {
+        URL.revokeObjectURL(url);
+      } catch (e) {
+        // Ignore errors
+      }
+    });
+    blobUrlsRef.current.clear();
+  }, []);
 
   // Preload next video function
   const preloadNext = useCallback((nextItem) => {
@@ -30,15 +61,30 @@ const MediaPlayer = ({ item, onEnded, isPlaying }) => {
 
   useEffect(() => {
     if (item) {
+      // Check if this is a new item (prevent unnecessary re-renders)
+      const newItemId = item.content_id || item.id;
+      const isNewItem = newItemId !== itemIdRef.current;
+      itemIdRef.current = newItemId;
+
       setIsTransitioning(true);
       setShowLoadingOverlay(false);
 
-      // Cleanup video sebelumnya untuk mencegah konflik
+      // Cleanup previous media
       const video = videoRef.current;
       if (video) {
         video.pause();
+        // Revoke previous blob URL before setting new one
+        if (video.src && video.src.startsWith("blob:")) {
+          revokeTrackedBlobUrl(video.src);
+        }
         video.removeAttribute("src");
         video.load();
+      }
+
+      // Cleanup previous image blob URL
+      const image = imageRef.current;
+      if (image && image.src && image.src.startsWith("blob:")) {
+        revokeTrackedBlobUrl(image.src);
       }
 
       setIsLoading(true);
@@ -70,16 +116,18 @@ const MediaPlayer = ({ item, onEnded, isPlaying }) => {
       if (intervalRef.current) {
         clearTimeout(intervalRef.current);
         clearInterval(intervalRef.current);
+        intervalRef.current = null;
       }
       if (loadingTimeoutRef.current) {
         clearTimeout(loadingTimeoutRef.current);
+        loadingTimeoutRef.current = null;
       }
       // Cleanup video saat component unmount atau item berubah
       const video = videoRef.current;
       if (video) {
         video.pause();
         if (video.src && video.src.startsWith("blob:")) {
-          URL.revokeObjectURL(video.src);
+          revokeTrackedBlobUrl(video.src);
         }
         video.removeAttribute("src");
       }
@@ -87,10 +135,27 @@ const MediaPlayer = ({ item, onEnded, isPlaying }) => {
       // Cleanup image blob URLs
       const image = imageRef.current;
       if (image && image.src && image.src.startsWith("blob:")) {
-        URL.revokeObjectURL(image.src);
+        revokeTrackedBlobUrl(image.src);
       }
     };
-  }, [item]);
+  }, [item, revokeTrackedBlobUrl]);
+
+  // Cleanup all blob URLs on component unmount
+  useEffect(() => {
+    return () => {
+      cleanupAllBlobUrls();
+      // Also cleanup preload video
+      if (preloadVideoRef.current) {
+        if (
+          preloadVideoRef.current.src &&
+          preloadVideoRef.current.src.startsWith("blob:")
+        ) {
+          URL.revokeObjectURL(preloadVideoRef.current.src);
+        }
+        preloadVideoRef.current = null;
+      }
+    };
+  }, [cleanupAllBlobUrls]);
 
   // Handle isPlaying state changes
   useEffect(() => {
@@ -103,7 +168,11 @@ const MediaPlayer = ({ item, onEnded, isPlaying }) => {
             video.play().catch((error) => {
               // Hanya log error jika bukan karena interruption oleh load baru
               if (error.name !== "AbortError") {
-                console.error("Play failed:", error);
+                logger.logContent(
+                  "Play Failed",
+                  { contentId: item?.content_id, error: error.message },
+                  "error"
+                );
                 if (error.name === "NotAllowedError") {
                   setNeedsUserInteraction(true);
                 }
@@ -149,14 +218,22 @@ const MediaPlayer = ({ item, onEnded, isPlaying }) => {
 
     switch (orientation) {
       case "portrait":
+        // Rotate portrait video -90 degrees (counter-clockwise) to fill landscape screen
         return {
-          ...baseStyles,
-          transform: "rotate(90deg)",
           width: "100vh",
           height: "100vw",
+          objectFit: "cover",
+          position: "absolute",
+          top: "50%",
+          left: "50%",
+          transform: "translate(-50%, -50%) rotate(-90deg)",
           transformOrigin: "center center",
         };
       case "landscape":
+        return {
+          ...baseStyles,
+          objectFit: "cover",
+        };
       case "auto":
       default:
         return baseStyles;
@@ -190,7 +267,11 @@ const MediaPlayer = ({ item, onEnded, isPlaying }) => {
         }
       }
     } catch (err) {
-      console.error("Error playing item:", err);
+      logger.logContent(
+        "Play Item Error",
+        { contentId: item?.content_id, error: err.message },
+        "error"
+      );
       setError(err.message);
       setIsLoading(false);
       setTimeout(onEnded, 2000);
@@ -201,21 +282,34 @@ const MediaPlayer = ({ item, onEnded, isPlaying }) => {
     const video = videoRef.current;
 
     if (!video) {
-      console.error("No video element found");
+      logger.logContent(
+        "No Video Element",
+        { contentId: item?.content_id },
+        "error"
+      );
       return;
     }
 
     try {
       // Try to get cached version first
       let videoUrl = null;
+      let isBlobUrl = false;
 
       try {
         const StorageService = (await import("../services/StorageService"))
           .default;
         const storageInstance = new StorageService();
         videoUrl = await storageInstance.getCachedContent(item.content_id);
+        if (videoUrl && videoUrl.startsWith("blob:")) {
+          isBlobUrl = true;
+          blobUrlsRef.current.add(videoUrl);
+        }
       } catch (cacheError) {
-        console.warn("Cache access failed:", cacheError);
+        logger.logContent(
+          "Cache Access Failed",
+          { contentId: item?.content_id },
+          "warn"
+        );
       }
 
       if (!videoUrl) {
@@ -223,9 +317,14 @@ const MediaPlayer = ({ item, onEnded, isPlaying }) => {
           // Try to fetch with authentication first
           const contentUrl = getContentUrl(item);
           const blob = await fetchContentWithAuth(contentUrl);
-          videoUrl = URL.createObjectURL(blob);
+          videoUrl = createTrackedBlobUrl(blob);
+          isBlobUrl = true;
         } catch (authError) {
-          console.warn("Auth fetch failed, using direct URL:", authError);
+          logger.logContent(
+            "Auth Fetch Failed - Direct URL",
+            { contentId: item?.content_id },
+            "warn"
+          );
           videoUrl = getContentUrl(item);
         }
       }
@@ -243,7 +342,11 @@ const MediaPlayer = ({ item, onEnded, isPlaying }) => {
         if (isPlaying && video.readyState >= 2 && video.paused) {
           video.play().catch((error) => {
             if (error.name !== "AbortError") {
-              console.error("Video play error:", error);
+              logger.logContent(
+                "Video Play Error",
+                { contentId: item?.content_id, error: error.message },
+                "error"
+              );
               if (error.name === "NotAllowedError") {
                 setNeedsUserInteraction(true);
               }
@@ -300,11 +403,15 @@ const MediaPlayer = ({ item, onEnded, isPlaying }) => {
       };
 
       const handleError = (e) => {
-        console.error("Video error:", e);
+        logger.logContent(
+          "Video Error",
+          { contentId: item?.content_id, error: e?.message || "Unknown" },
+          "error"
+        );
 
         // Don't try to handle errors for images - they shouldn't use video element
         if (item.content_type === "image") {
-          console.warn("Video error occurred for image content, skipping");
+          // Skip image content error handling
           return;
         }
 
@@ -355,17 +462,23 @@ const MediaPlayer = ({ item, onEnded, isPlaying }) => {
   const playImage = async () => {
     try {
       let imageUrl;
+      let isBlobUrl = false;
 
       try {
         // Try to get cached version first
         const cachedUrl = await getCachedContentUrl(item);
         if (cachedUrl) {
           imageUrl = cachedUrl;
+          if (cachedUrl.startsWith("blob:")) {
+            isBlobUrl = true;
+            blobUrlsRef.current.add(cachedUrl);
+          }
         } else {
           // Fetch with authentication and create blob URL
           const contentUrl = getContentUrl(item);
           const blob = await fetchContentWithAuth(contentUrl);
-          imageUrl = URL.createObjectURL(blob);
+          imageUrl = createTrackedBlobUrl(blob);
+          isBlobUrl = true;
         }
       } catch (fetchError) {
         console.warn(
@@ -393,7 +506,10 @@ const MediaPlayer = ({ item, onEnded, isPlaying }) => {
 
       img.onerror = (error) => {
         console.error("Image loading error:", error);
-        throw new Error("Image failed to load");
+        // Don't throw, just move to next item
+        setError("Image failed to load");
+        setIsLoading(false);
+        setTimeout(onEnded, 2000);
       };
 
       img.src = imageUrl;
@@ -441,7 +557,7 @@ const MediaPlayer = ({ item, onEnded, isPlaying }) => {
 
   const getContentUrl = (item) => {
     // Construct URL to backend content with authentication
-    const baseUrl = import.meta.env.VITE_API_URL || "http://localhost:3000";
+    const baseUrl = import.meta.env.VITE_API_URL;
     return `${baseUrl}/api/player/content/${item.content_id}`;
   };
 
@@ -497,12 +613,38 @@ const MediaPlayer = ({ item, onEnded, isPlaying }) => {
                   : item.transition === "zoom"
                   ? "transform 0.3s ease-in-out, opacity 0.3s ease-in-out"
                   : "opacity 0.2s ease-in-out",
-              transform:
-                item.transition === "slide" && (isLoading || isTransitioning)
-                  ? "translateX(50%)"
-                  : item.transition === "zoom" && (isLoading || isTransitioning)
-                  ? "scale(0.9)"
-                  : getOrientationStyles(item.orientation).transform || "none",
+              transform: (() => {
+                // Get base transform from orientation
+                const baseTransform =
+                  getOrientationStyles(item.orientation).transform || "";
+
+                // Add transition transforms
+                let transitionTransform = "";
+                if (isLoading || isTransitioning) {
+                  if (item.transition === "slide") {
+                    transitionTransform = "translateX(100%)";
+                  } else if (item.transition === "zoom") {
+                    transitionTransform = "scale(0.5)";
+                  }
+                }
+
+                // Combine transforms
+                if (item.orientation === "portrait") {
+                  // For portrait, we need to combine rotation with transition
+                  if (transitionTransform) {
+                    return `translate(-50%, -50%) rotate(-90deg) ${transitionTransform}`;
+                  }
+                  return baseTransform;
+                } else {
+                  // For landscape/auto, return transition transform or default position
+                  if (item.transition === "slide") {
+                    return transitionTransform || "translateX(0)";
+                  } else if (item.transition === "zoom") {
+                    return transitionTransform || "scale(1)";
+                  }
+                  return "none";
+                }
+              })(),
             }}
           />
           {showLoadingOverlay && (
@@ -531,12 +673,38 @@ const MediaPlayer = ({ item, onEnded, isPlaying }) => {
                   : item.transition === "zoom"
                   ? "transform 0.3s ease-in-out, opacity 0.3s ease-in-out"
                   : "opacity 0.2s ease-in-out",
-              transform:
-                item.transition === "slide" && (isLoading || isTransitioning)
-                  ? "translateX(50%)"
-                  : item.transition === "zoom" && (isLoading || isTransitioning)
-                  ? "scale(0.9)"
-                  : getOrientationStyles(item.orientation).transform || "none",
+              transform: (() => {
+                // Get base transform from orientation
+                const baseTransform =
+                  getOrientationStyles(item.orientation).transform || "";
+
+                // Add transition transforms
+                let transitionTransform = "";
+                if (isLoading || isTransitioning) {
+                  if (item.transition === "slide") {
+                    transitionTransform = "translateX(100%)";
+                  } else if (item.transition === "zoom") {
+                    transitionTransform = "scale(0.5)";
+                  }
+                }
+
+                // Combine transforms
+                if (item.orientation === "portrait") {
+                  // For portrait, we need to combine rotation with transition
+                  if (transitionTransform) {
+                    return `translate(-50%, -50%) rotate(-90deg) ${transitionTransform}`;
+                  }
+                  return baseTransform;
+                } else {
+                  // For landscape/auto, return transition transform or default position
+                  if (item.transition === "slide") {
+                    return transitionTransform || "translateX(0)";
+                  } else if (item.transition === "zoom") {
+                    return transitionTransform || "scale(1)";
+                  }
+                  return "none";
+                }
+              })(),
             }}
           />
           {showLoadingOverlay && (

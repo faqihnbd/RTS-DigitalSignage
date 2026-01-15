@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import logger from "../utils/logger";
 const API_URL = import.meta.env.VITE_API_URL;
 
 export default function NotificationCenter() {
@@ -17,7 +18,10 @@ export default function NotificationCenter() {
         return res.json();
       })
       .then((data) => setNotifications(Array.isArray(data) ? data : []))
-      .catch(() => setNotifications([]))
+      .catch((err) => {
+        logger.logApiError("/api/notifications", err);
+        setNotifications([]);
+      })
       .finally(() => setLoading(false));
   }, []);
 

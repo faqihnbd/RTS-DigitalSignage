@@ -11,6 +11,7 @@ import {
 } from "@heroicons/react/24/outline";
 import PlaylistItems from "./PlaylistItems";
 import { useNotification } from "../components/NotificationProvider";
+import logger from "../utils/logger";
 export default function PlaylistManagement() {
   const [playlists, setPlaylists] = useState([]);
   const [layouts, setLayouts] = useState([]);
@@ -87,10 +88,18 @@ export default function PlaylistManagement() {
         setSelectedLayout("");
         fetchPlaylists();
         nameInputRef.current.value = "";
+        logger.logPlaylist("Playlist Created", {
+          name: playlistName,
+          layoutId: selectedLayout,
+        });
         showInfo("Playlist berhasil dibuat!");
       })
       .catch(() => {
         setAdding(false);
+        logger.logApiError(
+          "/api/playlists (create)",
+          new Error("Create failed")
+        );
         showError("Gagal membuat playlist");
       });
   }
@@ -113,7 +122,10 @@ export default function PlaylistManagement() {
     fetch(`${import.meta.env.VITE_API_BASE_URL}/api/playlists/` + id, {
       method: "DELETE",
       headers: { Authorization: `Bearer ${token}` },
-    }).then(() => fetchPlaylists());
+    }).then(() => {
+      logger.logPlaylist("Playlist Deleted", { playlistId: id });
+      fetchPlaylists();
+    });
   }
 
   function handleTogglePlaylistStatus(playlistId, currentStatus) {
@@ -347,7 +359,34 @@ export default function PlaylistManagement() {
                     <div className="flex items-center gap-2 text-gray-600">
                       <ClockIcon className="h-4 w-4" />
                       <span className="text-sm">
-                        ~{(pl.items?.length || 0) * 30} detik
+                        ~
+                        {(() => {
+                          if (!pl.items || pl.items.length === 0) return 0;
+
+                          // Calculate total duration based on actual content
+                          const totalSeconds = pl.items.reduce(
+                            (total, item) => {
+                              // For video: use content.duration_sec
+                              if (item.content?.type === "video") {
+                                return (
+                                  total + (item.content.duration_sec || 30)
+                                );
+                              }
+                              // For image: use item.duration_sec (custom duration set by user)
+                              else if (item.content?.type === "image") {
+                                return total + (item.duration_sec || 10);
+                              }
+                              // For other content types: default 15 seconds
+                              else {
+                                return total + 15;
+                              }
+                            },
+                            0
+                          );
+
+                          return totalSeconds;
+                        })()}{" "}
+                        detik
                       </span>
                     </div>
                   </div>
@@ -518,6 +557,55 @@ export default function PlaylistManagement() {
           </div>
         </div>
       )}
+
+      {/* Tips Section */}
+      <div className="mt-8 bg-blue-50 border border-blue-200 rounded-lg p-6">
+        <div className="flex items-start gap-3">
+          <div className="flex-shrink-0">
+            <svg
+              className="h-6 w-6 text-blue-600"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+              />
+            </svg>
+          </div>
+          <div className="flex-1">
+            <h3 className="text-lg font-semibold text-blue-900 mb-2">
+              💡 Tips Penggunaan Layout
+            </h3>
+            <div className="space-y-2 text-sm text-blue-800">
+              <p>
+                <span className="font-medium">
+                  Layout Default (Fullscreen):
+                </span>{" "}
+                Akan menampilkan konten dari file di dalam playlist. Cocok untuk
+                menampilkan video atau gambar tunggal yang memenuhi seluruh
+                layar.
+              </p>
+              <p>
+                <span className="font-medium">Layout Kustom:</span> Jika Anda
+                memilih layout selain default, konten playlist akan ditampilkan
+                sesuai dengan zona yang telah Anda atur di layout tersebut.
+                Misalnya, layout dengan 2 zona akan membagi layar menjadi 2
+                bagian. Dan file konten yang ada di dalam playlist tidak akan
+                tampil.
+              </p>
+              <p className="pt-2 border-t border-blue-200">
+                <span className="font-medium">Catatan:</span> Pastikan Anda
+                sudah mengatur zona di halaman Layout sebelum menggunakan layout
+                kustom untuk hasil tampilan yang optimal.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

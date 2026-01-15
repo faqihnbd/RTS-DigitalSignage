@@ -13,6 +13,7 @@ const {
   Layout,
   LayoutZone,
 } = require("../models");
+const logger = require("../utils/logger");
 const router = express.Router();
 
 // Middleware untuk validasi device token
@@ -37,6 +38,28 @@ const validateDeviceToken = async (req, res, next) => {
         },
         include: ["Tenant"],
       });
+
+      // If device not found with both deviceId and token, check which one is wrong
+      if (!device) {
+        // Check if device exists with this deviceId
+        const deviceExists = await Device.findOne({
+          where: { device_id: deviceId },
+        });
+
+        if (!deviceExists) {
+          return res.status(401).json({
+            error: "INVALID_DEVICE_ID",
+            message:
+              "Device ID tidak ditemukan. Periksa kembali Device ID Anda.",
+          });
+        }
+
+        // Device exists but token is wrong
+        return res.status(401).json({
+          error: "INVALID_TOKEN",
+          message: "License Key tidak valid. Periksa kembali License Key Anda.",
+        });
+      }
     } else {
       // For routes without deviceId parameter, validate only license_key
       device = await Device.findOne({
@@ -46,18 +69,61 @@ const validateDeviceToken = async (req, res, next) => {
         },
         include: ["Tenant"],
       });
+
+      if (!device) {
+        return res.status(401).json({
+          error: "INVALID_TOKEN",
+          message: "License Key tidak valid. Periksa kembali License Key Anda.",
+        });
+      }
     }
 
-    if (!device || !device.Tenant || device.Tenant.status !== "active") {
-      return res
-        .status(401)
-        .json({ error: "Invalid token or inactive device" });
+    if (!device.Tenant) {
+      return res.status(401).json({
+        error: "TENANT_NOT_FOUND",
+        message: "Tenant tidak ditemukan untuk device ini.",
+      });
+    }
+
+    // Check if tenant is active OR if tenant package has expired
+    if (device.Tenant.status !== "active") {
+      let errorMessage = "Inactive device or tenant";
+
+      if (device.Tenant.status === "expired") {
+        errorMessage = "PACKAGE_EXPIRED";
+      } else if (device.Tenant.status === "suspended") {
+        errorMessage = "TENANT_SUSPENDED";
+      }
+
+      return res.status(401).json({
+        error: errorMessage,
+        tenant_status: device.Tenant.status,
+        expired_at: device.Tenant.expired_at,
+      });
+    }
+
+    // Additional check: Verify if package expiry date has passed
+    if (device.Tenant.expired_at) {
+      const now = new Date();
+      const expiryDate = new Date(device.Tenant.expired_at);
+
+      if (now > expiryDate) {
+        // Auto-update tenant status to expired
+        await device.Tenant.update({ status: "expired" });
+
+        return res.status(401).json({
+          error: "PACKAGE_EXPIRED",
+          tenant_status: "expired",
+          expired_at: device.Tenant.expired_at,
+          message: "Paket telah habis. Silakan hubungi administrator.",
+        });
+      }
     }
 
     req.device = device;
     next();
   } catch (error) {
-    console.error("Token validation error:", error);
+    logger.logDevice("Token Validation Error", req, { error: error.message });
     res.status(401).json({ error: "Invalid token" });
   }
 };
@@ -223,6 +289,14 @@ router.get("/data/:deviceId", validateDeviceToken, async (req, res) => {
               name: playlist.layout.name,
               type: playlist.layout.type,
               configuration: playlist.layout.configuration,
+              displays: playlist.layout.configuration?.displays || [
+                {
+                  id: 1,
+                  name: "Display 1",
+                  orientation: "landscape",
+                  primary: true,
+                },
+              ],
               zones: playlist.layout.zones
                 ? playlist.layout.zones.map((zone) => ({
                     id: zone.id,
@@ -253,7 +327,9 @@ router.get("/data/:deviceId", validateDeviceToken, async (req, res) => {
                             ? zone.playlist.items.map((item) => ({
                                 id: item.id,
                                 order: item.order,
-                                duration_sec: item.duration_sec,
+                                duration_sec:
+                                  item.duration_sec ||
+                                  item.content?.duration_sec,
                                 content: item.content
                                   ? {
                                       id: item.content.id,
@@ -262,6 +338,7 @@ router.get("/data/:deviceId", validateDeviceToken, async (req, res) => {
                                       mime_type: item.content.mime_type,
                                       type: item.content.type,
                                       title: item.content.title,
+                                      duration_sec: item.content.duration_sec,
                                     }
                                   : null,
                               }))
@@ -323,7 +400,10 @@ router.get("/data/:deviceId", validateDeviceToken, async (req, res) => {
 
     res.json(playerData);
   } catch (error) {
-    console.error("Error getting player data:", error);
+    logger.logError(error, req, {
+      action: "Get Player Data",
+      deviceId: req.params.deviceId,
+    });
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -331,11 +411,10 @@ router.get("/data/:deviceId", validateDeviceToken, async (req, res) => {
 // Device heartbeat
 router.post("/heartbeat", validateDeviceToken, async (req, res) => {
   try {
-    const { device_id, status, player_info } = req.body;
+    const { status, player_info } = req.body;
 
-    const device = await Device.findOne({
-      where: { device_id, tenant_id: req.device.tenant_id },
-    });
+    // Use device from middleware (already validated)
+    const device = req.device;
 
     if (!device) {
       return res.status(404).json({ error: "Device not found" });
@@ -356,7 +435,7 @@ router.post("/heartbeat", validateDeviceToken, async (req, res) => {
       server_time: new Date().toISOString(),
     });
   } catch (error) {
-    console.error("Error processing heartbeat:", error);
+    logger.logError(error, req, { action: "Process Heartbeat" });
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -381,7 +460,7 @@ router.post("/stats", validateDeviceToken, async (req, res) => {
       message: "Statistics recorded",
     });
   } catch (error) {
-    console.error("Error recording stats:", error);
+    logger.logError(error, req, { action: "Record Stats" });
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -391,9 +470,11 @@ router.post("/error", validateDeviceToken, async (req, res) => {
   try {
     const errorData = req.body;
 
-    // Log error (you might want to store in database)
-    console.error("Player error reported:", {
+    // Log error from player device
+    logger.error("Player error reported", {
       ...errorData,
+      deviceId: req.device?.device_id,
+      tenantId: req.device?.tenant_id,
       timestamp: new Date(),
     });
 
@@ -402,7 +483,7 @@ router.post("/error", validateDeviceToken, async (req, res) => {
       message: "Error report received",
     });
   } catch (error) {
-    console.error("Error processing error report:", error);
+    logger.logError(error, req, { action: "Process Error Report" });
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -532,7 +613,10 @@ router.get("/content/:id", validateDeviceToken, async (req, res) => {
       stream.pipe(res);
     }
   } catch (error) {
-    console.error("Error serving content file:", error);
+    logger.logError(error, req, {
+      action: "Serve Content File",
+      contentId: req.params.id,
+    });
     res.status(500).json({ error: "Internal server error" });
   }
 });

@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import logger from "../utils/logger";
 const API_URL = import.meta.env.VITE_API_URL;
 
 export default function ExportLaporan({ showNotif }) {
@@ -23,7 +24,10 @@ export default function ExportLaporan({ showNotif }) {
         setTenants(Array.isArray(data) ? data : []);
         if (Array.isArray(data) && data.length > 0) setTenantId(data[0].id);
       })
-      .catch(() => setTenants([]));
+      .catch((err) => {
+        logger.logApiError("/api/tenants", err);
+        setTenants([]);
+      });
   }, []);
 
   const handleExport = async (type) => {
@@ -62,7 +66,7 @@ export default function ExportLaporan({ showNotif }) {
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `laporan_rts.${ext}`;
+      a.download = `laporan_wisse.${ext}`;
       document.body.appendChild(a);
       a.click();
       a.remove();

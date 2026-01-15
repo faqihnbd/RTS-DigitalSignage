@@ -9,20 +9,20 @@ class StorageService {
         localforage.WEBSQL,
         localforage.LOCALSTORAGE,
       ],
-      name: "RTSDigitalSignage",
+      name: "WisseDigitalSignage",
       version: 1.0,
       storeName: "signage_data",
     });
 
     // Separate store for cached content
     this.contentStore = localforage.createInstance({
-      name: "RTSDigitalSignage",
+      name: "WisseDigitalSignage",
       storeName: "cached_content",
     });
 
     // Store for metadata
     this.metaStore = localforage.createInstance({
-      name: "RTSDigitalSignage",
+      name: "WisseDigitalSignage",
       storeName: "metadata",
     });
   }
@@ -89,6 +89,24 @@ class StorageService {
       await localforage.removeItem("session_id");
     } catch (error) {
       console.error("Error clearing auth:", error);
+    }
+  }
+
+  // Generic get/set for simple key-value storage
+  async getItem(key) {
+    try {
+      return await localforage.getItem(key);
+    } catch (error) {
+      console.error(`Error getting item ${key}:`, error);
+      return null;
+    }
+  }
+
+  async setItem(key, value) {
+    try {
+      await localforage.setItem(key, value);
+    } catch (error) {
+      console.error(`Error setting item ${key}:`, error);
     }
   }
 
@@ -233,6 +251,24 @@ class StorageService {
       await this.metaStore.clear();
     } catch (error) {
       console.error("Error clearing all cache:", error);
+    }
+  }
+
+  // Clear everything - full reset
+  async clearEverything() {
+    try {
+      // Clear all localforage stores
+      await localforage.clear();
+      await this.contentStore.clear();
+      await this.metaStore.clear();
+
+      // Clear localStorage
+      localStorage.clear();
+
+      // Clear sessionStorage
+      sessionStorage.clear();
+    } catch (error) {
+      console.error("Error clearing everything:", error);
     }
   }
 

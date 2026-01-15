@@ -15,7 +15,7 @@ export default function Sidebar() {
           Central
         </span>
         <span className="text-xs font-light tracking-wider text-blue-200">
-          RTS
+          Wisse
         </span>
       </div>
       <nav
@@ -61,7 +61,7 @@ export default function Sidebar() {
         ))}
       </nav>
       <div className="mt-10 text-xs text-blue-200 opacity-70 text-center select-none">
-        &copy; {new Date().getFullYear()} RunToStart CMS
+        &copy; {new Date().getFullYear()} Wisse CMS
       </div>
     </aside>
   );

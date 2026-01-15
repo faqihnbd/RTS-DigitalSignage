@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect } from "react";
 import {
   BrowserRouter as Router,
   Routes,
@@ -8,6 +8,7 @@ import {
 } from "react-router-dom";
 import Layout from "./components/Layout";
 import NotificationProvider from "./components/NotificationProvider";
+import ErrorBoundary from "./components/ErrorBoundary";
 import Login from "./pages/Login";
 // import Dashboard from "./pages/Dashboard";
 import DashboardTenant from "./pages/DashboardTenant";
@@ -18,6 +19,8 @@ import DeviceRegistration from "./pages/DeviceRegistration";
 import Payment from "./pages/Payment";
 import PackageManagement from "./pages/PackageManagement";
 import PaymentCallback from "./pages/PaymentCallback";
+import { isTokenExpired } from "./utils/tokenUtils";
+import logger from "./utils/logger";
 
 function isAuthenticated() {
   const token =
@@ -26,7 +29,25 @@ function isAuthenticated() {
   const tenantId =
     localStorage.getItem("tenant_id") || sessionStorage.getItem("tenant_id");
   const role = localStorage.getItem("role") || sessionStorage.getItem("role");
-  return !!token && !!tenantId && role === "tenant_admin";
+
+  // Check if token exists and is not expired
+  if (!token || !tenantId || role !== "tenant_admin") {
+    return false;
+  }
+
+  // Check if token is expired
+  if (isTokenExpired(token)) {
+    // Clear expired token
+    localStorage.removeItem("admin_token");
+    sessionStorage.removeItem("admin_token");
+    localStorage.removeItem("tenant_id");
+    sessionStorage.removeItem("tenant_id");
+    localStorage.removeItem("role");
+    sessionStorage.removeItem("role");
+    return false;
+  }
+
+  return true;
 }
 
 function ProtectedRoute({ children }) {
@@ -111,15 +132,30 @@ function AppContent() {
 }
 
 function App() {
+  // Log app initialization
+  useEffect(() => {
+    logger.info("App Initialized", {
+      version: import.meta.env.VITE_APP_VERSION || "1.0.0",
+      environment: import.meta.env.MODE,
+    });
+
+    // Log page navigation
+    return () => {
+      logger.flush();
+    };
+  }, []);
+
   return (
-    <Router>
-      <NotificationProvider>
-        <Routes>
-          <Route path="/login" element={<Login />} />
-          <Route path="/*" element={<AppContent />} />
-        </Routes>
-      </NotificationProvider>
-    </Router>
+    <ErrorBoundary>
+      <Router>
+        <NotificationProvider>
+          <Routes>
+            <Route path="/login" element={<Login />} />
+            <Route path="/*" element={<AppContent />} />
+          </Routes>
+        </NotificationProvider>
+      </Router>
+    </ErrorBoundary>
   );
 }
 

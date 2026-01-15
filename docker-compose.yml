@@ -1,14 +1,50 @@
-version: "3.8"
+version: "3.3"
 services:
+  mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: faqih2204
+      MYSQL_DATABASE: rts_digital_signage_prod
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      - webnet
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "mysqladmin",
+          "ping",
+          "-h",
+          "localhost",
+          "-u",
+          "root",
+          "-pfaqih2204",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   backend:
     build: ./backend
     environment:
       - NODE_ENV=production
-      - PORT=3000
+      - PORT=3001
+      - DB_HOST=mysql
+      - DB_USER=root
+      - DB_PASS=faqih2204
+      - DB_NAME=rts_digital_signage_prod
+      - DB_PASS=faqih2204
+      - DB_NAME=rts_digitalsignage
     volumes:
       - ./backend/uploads:/usr/src/app/uploads
+    depends_on:
+      mysql:
+        condition: service_healthy
     networks:
       - webnet
+    restart: unless-stopped
 
   frontend_admin:
     build:
@@ -40,12 +76,14 @@ services:
       - frontend_display
     ports:
       - "8080:80"
-      - "8443:443"
     volumes:
       - ./nginx/proxy.conf:/etc/nginx/conf.d/default.conf:ro
-      - ./nginx/certs:/etc/nginx/certs:ro
     networks:
       - webnet
+    restart: unless-stopped
+
+volumes:
+  mysql_data:
 
 networks:
   webnet:

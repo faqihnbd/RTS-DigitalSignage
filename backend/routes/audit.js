@@ -1,6 +1,7 @@
 const express = require("express");
 const { User, Tenant, Device, Content } = require("../models");
 const { Op } = require("sequelize");
+const logger = require("../utils/logger");
 const router = express.Router();
 
 // GET /audit - Get audit logs
@@ -128,7 +129,10 @@ router.get("/", async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Error fetching audit logs:", error);
+    logger.logError(error, req, {
+      action: "fetch_audit_logs",
+      tenantId: req.user.tenant_id,
+    });
     res.status(500).json({ message: "Internal server error" });
   }
 });
@@ -161,7 +165,7 @@ router.get("/actions", async (req, res) => {
 
     res.json(actions);
   } catch (error) {
-    console.error("Error fetching audit actions:", error);
+    logger.logError(error, req, { action: "fetch_audit_actions" });
     res.status(500).json({ message: "Internal server error" });
   }
 });

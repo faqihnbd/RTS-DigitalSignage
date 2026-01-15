@@ -124,6 +124,8 @@ const LayoutPlayer = ({ playlist, onEnded, isPlaying }) => {
   const [playlistVersions, setPlaylistVersions] = useState({}); // Track playlist versions to detect changes
   const multiContentTimers = useRef({});
   const playlistTimers = useRef({}); // Timers for playlist zones
+  const clockTimerRef = useRef(null);
+  const isUnmountedRef = useRef(false);
   const [weatherData, setWeatherData] = useState({
     temperature: 28,
     condition: "Cerah",
@@ -167,9 +169,7 @@ const LayoutPlayer = ({ playlist, onEnded, isPlaying }) => {
 
     try {
       const baseUrl =
-        import.meta.env.VITE_API_BASE_URL ||
-        import.meta.env.VITE_API_URL ||
-        "http://localhost:3000";
+        import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL;
 
       const response = await fetch(
         `${baseUrl}/api/contents/public/${contentId}`
@@ -214,16 +214,51 @@ const LayoutPlayer = ({ playlist, onEnded, isPlaying }) => {
 
   // Update clock every second
   useEffect(() => {
-    const timer = setInterval(() => {
-      setCurrentTime(new Date());
+    clockTimerRef.current = setInterval(() => {
+      if (!isUnmountedRef.current) {
+        setCurrentTime(new Date());
+      }
     }, 1000);
-    return () => clearInterval(timer);
+
+    return () => {
+      if (clockTimerRef.current) {
+        clearInterval(clockTimerRef.current);
+        clockTimerRef.current = null;
+      }
+    };
+  }, []);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    isUnmountedRef.current = false;
+
+    return () => {
+      isUnmountedRef.current = true;
+
+      // Clear all timers on unmount
+      Object.values(multiContentTimers.current).forEach((timer) => {
+        clearInterval(timer);
+        clearTimeout(timer);
+      });
+      multiContentTimers.current = {};
+
+      Object.values(playlistTimers.current).forEach((timer) => {
+        clearInterval(timer);
+        clearTimeout(timer);
+      });
+      playlistTimers.current = {};
+
+      if (clockTimerRef.current) {
+        clearInterval(clockTimerRef.current);
+        clockTimerRef.current = null;
+      }
+    };
   }, []);
 
   // Initialize zone content from playlist
   useEffect(() => {
     const initializeZoneContent = async () => {
-      if (playlist?.layout?.zones) {
+      if (playlist?.layout?.zones && !isUnmountedRef.current) {
         const zoneItems = {};
         const indexes = {};
         const playlistIdx = {};
@@ -265,10 +300,12 @@ const LayoutPlayer = ({ playlist, onEnded, isPlaying }) => {
 
               // Create version hash for change detection
               const newVersion = createPlaylistVersion(sortedItems);
-              setPlaylistVersions((prev) => ({
-                ...prev,
-                [zone.id]: newVersion,
-              }));
+              if (!isUnmountedRef.current) {
+                setPlaylistVersions((prev) => ({
+                  ...prev,
+                  [zone.id]: newVersion,
+                }));
+              }
 
               playlistIdx[zone.id] = 0; // Start with first item
               zoneItems[zone.id] = sortedItems[0].content;
@@ -276,9 +313,12 @@ const LayoutPlayer = ({ playlist, onEnded, isPlaying }) => {
           }
         }
 
-        setCurrentZoneItems(zoneItems);
-        setMultiContentIndexes(indexes);
-        setPlaylistIndexes(playlistIdx);
+        // Only update state if component is still mounted
+        if (!isUnmountedRef.current) {
+          setCurrentZoneItems(zoneItems);
+          setMultiContentIndexes(indexes);
+          setPlaylistIndexes(playlistIdx);
+        }
       }
     };
 
@@ -343,10 +383,11 @@ const LayoutPlayer = ({ playlist, onEnded, isPlaying }) => {
     playlistTimers.current = {};
 
     playlist.layout.zones.forEach((zone) => {
-      // Handle multiple content zones
+      // Handle multiple content zones (skip video zones - they use onEnded event)
       if (
         zone.settings?.multiple_content &&
-        zone.settings?.content_list?.length > 1
+        zone.settings?.content_list?.length > 1 &&
+        zone.content_type !== "video"
       ) {
         const duration = (zone.settings?.content_duration || 5) * 1000;
 
@@ -397,22 +438,18 @@ const LayoutPlayer = ({ playlist, onEnded, isPlaying }) => {
         const sortedItems = getSortedPlaylistItems(zone.playlist.items);
         zone.playlist.items = sortedItems;
 
-        // Check if we should use individual item durations
-        const useItemDuration = zone.settings?.use_item_duration !== false; // Default to true
-
+        // Always use item duration from playlist
         const setNextPlaylistItem = () => {
           setPlaylistIndexes((prev) => {
             const currentIndex = prev[zone.id] || 0;
             const nextIndex = (currentIndex + 1) % sortedItems.length;
             const currentItem = sortedItems[currentIndex];
 
-            // Get duration for current item
-            let itemDuration;
-            if (useItemDuration && currentItem.duration_sec) {
-              itemDuration = currentItem.duration_sec * 1000; // Use item's duration
-            } else {
-              itemDuration = (zone.settings?.content_duration || 10) * 1000; // Use zone default
-            }
+            // Always use item's duration from playlist, fallback to content duration for videos (default 10 seconds if not set)
+            const itemDuration =
+              (currentItem.duration_sec ||
+                currentItem.content?.duration_sec ||
+                10) * 1000;
 
             // Update current content
             setCurrentZoneItems((prevItems) => ({
@@ -436,12 +473,10 @@ const LayoutPlayer = ({ playlist, onEnded, isPlaying }) => {
 
         // Start the playlist cycling
         const firstItem = sortedItems[0];
-        let firstDuration;
-        if (useItemDuration && firstItem.duration_sec) {
-          firstDuration = firstItem.duration_sec * 1000;
-        } else {
-          firstDuration = (zone.settings?.content_duration || 10) * 1000;
-        }
+        // Always use item's duration from playlist, fallback to content duration for videos (default 10 seconds if not set)
+        const firstDuration =
+          (firstItem.duration_sec || firstItem.content?.duration_sec || 10) *
+          1000;
 
         playlistTimers.current[zone.id] = setTimeout(() => {
           setNextPlaylistItem();
@@ -473,9 +508,7 @@ const LayoutPlayer = ({ playlist, onEnded, isPlaying }) => {
         const cachedContent = contentCache[content.id];
         if (cachedContent.filename) {
           const baseUrl =
-            import.meta.env.VITE_API_BASE_URL ||
-            import.meta.env.VITE_API_URL ||
-            "http://localhost:3000";
+            import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL;
           const url = `${baseUrl}/uploads/${cachedContent.filename}`;
           return url;
         }
@@ -488,8 +521,7 @@ const LayoutPlayer = ({ playlist, onEnded, isPlaying }) => {
             if (item.Content.filename) {
               const baseUrl =
                 import.meta.env.VITE_API_BASE_URL ||
-                import.meta.env.VITE_API_URL ||
-                "http://localhost:3000";
+                import.meta.env.VITE_API_URL;
               const url = `${baseUrl}/uploads/${item.Content.filename}`;
               return url;
             }
@@ -508,9 +540,7 @@ const LayoutPlayer = ({ playlist, onEnded, isPlaying }) => {
 
     // Standard content with filename
     const baseUrl =
-      import.meta.env.VITE_API_BASE_URL ||
-      import.meta.env.VITE_API_URL ||
-      "http://localhost:3000";
+      import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL;
     const url = `${baseUrl}/uploads/${content.filename}`;
     return url;
   };
@@ -522,16 +552,44 @@ const LayoutPlayer = ({ playlist, onEnded, isPlaying }) => {
       case "video":
         const videoUrl = getContentUrl(zoneContent);
 
+        // Read settings from zone - use sensible defaults
+        const videoAutoplay = zone.settings?.autoplay !== false; // default true
+        // For multiple content video zones, disable loop to allow onEnded to trigger next video
+        const hasMultipleVideos =
+          zone.settings?.multiple_content &&
+          zone.settings?.content_list?.length > 1;
+        const videoLoop = hasMultipleVideos
+          ? false
+          : zone.settings?.loop !== false; // default true only for single video
+        const videoMuted = zone.settings?.muted !== false; // default true for autoplay to work
+        const videoVolume = (zone.settings?.volume || 100) / 100;
+
         return (
           <div className="relative w-full h-full bg-black overflow-hidden">
             {zoneContent && videoUrl ? (
               <video
-                key={`${zone.id}-${zoneContent.id}-${videoUrl}`} // Force re-render when content changes
+                key={`${zone.id}-${zoneContent.id}-${videoUrl}`}
                 className="w-full h-full object-cover"
-                autoPlay={zone.settings?.autoplay !== false && isPlaying}
-                loop={zone.settings?.loop !== false}
-                muted={zone.settings?.mute !== false}
+                autoPlay={videoAutoplay}
+                loop={videoLoop}
+                muted={videoMuted}
+                playsInline={true}
                 src={videoUrl}
+                onLoadedData={(e) => {
+                  // Set volume
+                  e.target.volume = videoVolume;
+
+                  // Ensure video plays after loading
+                  if (isPlaying && videoAutoplay) {
+                    e.target.play().catch((err) => {
+                      // Browser requires muted for autoplay
+                      e.target.muted = true;
+                      e.target.play().catch((err2) => {
+                        // Video play failed - silent
+                      });
+                    });
+                  }
+                }}
                 onEnded={() => handleZoneEnded(zone)}
                 onError={(e) => {
                   console.error(`Video load error for zone ${zone.id}:`, {
@@ -603,23 +661,24 @@ const LayoutPlayer = ({ playlist, onEnded, isPlaying }) => {
         if (isRunningText) {
           return (
             <div
-              className="w-full h-full overflow-hidden flex items-center"
+              className="w-full h-full overflow-hidden relative"
               style={{
                 backgroundColor:
                   zone.settings?.background_color || "transparent",
               }}
             >
               <div
-                className="whitespace-nowrap animate-marquee"
+                className="whitespace-nowrap ticker-scroll-horizontal"
                 style={{
                   color: zone.settings?.text_color || "#ffffff",
                   fontSize: `${zone.settings?.font_size || 24}px`,
                   fontWeight: zone.settings?.font_weight || "normal",
-                  animationDuration: `${zone.settings?.running_speed || 10}s`,
-                  width: "100%",
-                  display: "flex",
-                  alignItems: "center",
-                  height: "100%",
+                  animationDuration: `${
+                    (zone.settings?.running_speed || 10) * 10
+                  }s`,
+                  position: "absolute",
+                  top: "50%",
+                  willChange: "transform",
                 }}
               >
                 {textContent}
@@ -706,12 +765,12 @@ const LayoutPlayer = ({ playlist, onEnded, isPlaying }) => {
                 <div
                   className={`${
                     zone.settings?.direction === "vertical"
-                      ? "animate-scroll-vertical"
-                      : "animate-scroll-horizontal"
-                  } whitespace-nowrap absolute flex items-center`}
+                      ? "ticker-scroll-vertical"
+                      : "ticker-scroll-horizontal"
+                  } whitespace-nowrap flex items-center`}
                   style={{
                     animationDuration: `${
-                      20 / (zone.settings?.scroll_speed || 5)
+                      100 / (zone.settings?.scroll_speed || 5)
                     }s`,
                     fontWeight: zone.settings?.font_weight || "normal",
                     textShadow: zone.settings?.text_shadow
@@ -719,6 +778,9 @@ const LayoutPlayer = ({ playlist, onEnded, isPlaying }) => {
                       : "none",
                     letterSpacing: zone.settings?.letter_spacing || "normal",
                     height: "100%",
+                    position: "absolute",
+                    top: "50%",
+                    willChange: "transform",
                   }}
                 >
                   {zone.settings?.text_content ||
@@ -768,13 +830,16 @@ const LayoutPlayer = ({ playlist, onEnded, isPlaying }) => {
             <div
               className={`${
                 zone.settings?.direction === "vertical"
-                  ? "animate-scroll-vertical"
-                  : "animate-scroll-horizontal"
-              } whitespace-nowrap absolute`}
+                  ? "ticker-scroll-vertical"
+                  : "ticker-scroll-horizontal"
+              } whitespace-nowrap`}
               style={{
                 animationDuration: `${
-                  20 / (zone.settings?.scroll_speed || 5)
+                  100 / (zone.settings?.scroll_speed || 5)
                 }s`,
+                position: "absolute",
+                top: "50%",
+                willChange: "transform",
               }}
             >
               {zone.settings?.text_content ||
@@ -1498,7 +1563,49 @@ const LayoutPlayer = ({ playlist, onEnded, isPlaying }) => {
   };
 
   const handleZoneEnded = (zone) => {
-    // Handle when video in zone ends
+    // Handle when video in zone ends - advance to next content for multiple content zones
+    if (
+      zone.settings?.multiple_content &&
+      zone.settings?.content_list?.length > 1
+    ) {
+      setMultiContentIndexes((prev) => {
+        const currentIndex = prev[zone.id] || 0;
+        const nextIndex =
+          (currentIndex + 1) % zone.settings.content_list.length;
+
+        // Update current content with full content data
+        const updateContent = async () => {
+          const nextContentId = zone.settings.content_list[nextIndex];
+
+          // Try to find full content data from playlist items
+          let contentData = { id: nextContentId };
+          if (playlist?.items) {
+            const foundItem = playlist.items.find(
+              (item) => item.content && item.content.id === nextContentId
+            );
+            if (foundItem?.content) {
+              contentData = foundItem.content;
+            } else {
+              contentData = await fetchContentById(nextContentId);
+            }
+          } else {
+            contentData = await fetchContentById(nextContentId);
+          }
+
+          setCurrentZoneItems((prevItems) => ({
+            ...prevItems,
+            [zone.id]: contentData,
+          }));
+        };
+
+        updateContent();
+
+        return {
+          ...prev,
+          [zone.id]: nextIndex,
+        };
+      });
+    }
   };
 
   const handleImageLoad = (zone) => {
@@ -1546,52 +1653,96 @@ const LayoutPlayer = ({ playlist, onEnded, isPlaying }) => {
     );
   }
 
+  // Get orientation from layout displays
+  const primaryDisplay =
+    playlist.layout.displays?.find((d) => d.primary) ||
+    playlist.layout.displays?.[0] ||
+    playlist.layout.configuration?.displays?.find((d) => d.primary) ||
+    playlist.layout.configuration?.displays?.[0];
+  const orientation = primaryDisplay?.orientation || "landscape";
+  const isPortrait = orientation === "portrait";
+
+  // For portrait mode on a landscape physical monitor:
+  // We rotate the entire container 90 degrees counter-clockwise
+  // and swap width/height so content fills the rotated view
+  const getPortraitContainerStyle = () => {
+    if (!isPortrait) {
+      return {
+        width: "100%",
+        height: "100%",
+        position: "absolute",
+        top: 0,
+        left: 0,
+      };
+    }
+
+    // For portrait: rotate -90deg and swap dimensions
+    // Container needs to be sized as height x width of viewport
+    // then rotated to fill the screen vertically
+    return {
+      width: "100vh", // Use viewport height as width (will be rotated)
+      height: "100vw", // Use viewport width as height (will be rotated)
+      position: "absolute",
+      top: "50%",
+      left: "50%",
+      transform: "translate(-50%, -50%) rotate(-90deg)",
+      transformOrigin: "center center",
+    };
+  };
+
   return (
     <div className="fullscreen bg-black relative overflow-hidden">
-      {/* Render all zones */}
-      {playlist.layout.zones?.map((zone) => (
-        <div
-          key={zone.id}
-          className="absolute"
-          style={{
-            left: `${zone.position.x}%`,
-            top: `${zone.position.y}%`,
-            width: `${zone.position.width}%`,
-            height: `${zone.position.height}%`,
-            zIndex: zone.z_index || 1,
-            display: zone.is_visible === false ? "none" : "block",
-          }}
-        >
-          {renderZoneContent(zone)}
-        </div>
-      ))}
+      {/* Layout container with orientation support */}
+      <div style={getPortraitContainerStyle()}>
+        {/* Render all zones */}
+        {playlist.layout.zones?.map((zone) => (
+          <div
+            key={zone.id}
+            className="absolute"
+            style={{
+              left: `${zone.position.x}%`,
+              top: `${zone.position.y}%`,
+              width: `${zone.position.width}%`,
+              height: `${zone.position.height}%`,
+              zIndex: zone.z_index || 1,
+              display: zone.is_visible === false ? "none" : "block",
+            }}
+          >
+            {renderZoneContent(zone)}
+          </div>
+        ))}
+      </div>
 
       {/* Custom CSS for animations */}
       <style>{`
-        @keyframes scroll-horizontal {
+        @keyframes ticker-horizontal {
           0% {
-            transform: translateX(100%);
+            left: 100%;
+            transform: translateY(-50%);
           }
           100% {
-            transform: translateX(-100%);
+            left: 0%;
+            transform: translateX(-100%) translateY(-50%);
           }
         }
 
-        @keyframes scroll-vertical {
+        @keyframes ticker-vertical {
           0% {
-            transform: translateY(100%);
+            top: 100%;
+            transform: translateX(0);
           }
           100% {
+            top: 0%;
             transform: translateY(-100%);
           }
         }
 
-        .animate-scroll-horizontal {
-          animation: scroll-horizontal linear infinite;
+        .ticker-scroll-horizontal {
+          animation: ticker-horizontal linear infinite;
         }
 
-        .animate-scroll-vertical {
-          animation: scroll-vertical linear infinite;
+        .ticker-scroll-vertical {
+          animation: ticker-vertical linear infinite;
         }
       `}</style>
     </div>

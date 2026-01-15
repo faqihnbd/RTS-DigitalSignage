@@ -11,6 +11,7 @@ import {
   SparklesIcon,
 } from "@heroicons/react/24/outline";
 import { useNotification } from "../components/NotificationProvider";
+import logger from "../utils/logger";
 
 export default function UpgradePlan() {
   const [selectedPlan, setSelectedPlan] = useState(null);
@@ -42,7 +43,7 @@ export default function UpgradePlan() {
         setPackages(data);
       }
     } catch (err) {
-      console.error("Error fetching packages:", err);
+      logger.logApiError("/api/packages", err);
     }
   };
 
@@ -63,7 +64,7 @@ export default function UpgradePlan() {
         setCurrentPlan(data);
       }
     } catch (err) {
-      console.error("Error fetching current package:", err);
+      logger.logApiError("/api/packages/current", err);
     } finally {
       setLoading(false);
     }

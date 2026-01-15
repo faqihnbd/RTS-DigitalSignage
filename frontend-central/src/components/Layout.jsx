@@ -6,7 +6,7 @@ export default function Layout({ children, user, onLogout }) {
       <header className="bg-gradient-to-r from-blue-900 via-blue-700 to-indigo-800 text-white px-8 py-4 flex items-center justify-between shadow-lg sticky top-0 z-20 border-b border-blue-800">
         <div className="flex items-center gap-4">
           <span className="text-2xl font-extrabold tracking-widest drop-shadow-lg">
-            RunToStart Digital Signage Central
+            Wisse Digital Signage Central
           </span>
           <span className="ml-2 px-2 py-1 rounded bg-white bg-opacity-20 text-blue-200 text-xs font-semibold tracking-wide shadow">
             Super Admin

@@ -89,9 +89,10 @@ export default function LayoutBuilder({ layout, onSave, onCancel }) {
     description: layout?.description || "",
     type: layout?.type || "custom",
     zones: layout?.zones || [],
-    displays: layout?.displays || [
-      { id: 1, name: "Display 1", orientation: "landscape", primary: true },
-    ], // Multi-display support
+    displays: layout?.configuration?.displays ||
+      layout?.displays || [
+        { id: 1, name: "Display 1", orientation: "landscape", primary: true },
+      ], // Multi-display support
     current_display: 0, // Current display being edited
   });
 
@@ -195,7 +196,7 @@ export default function LayoutBuilder({ layout, onSave, onCancel }) {
 
   const getDefaultSettings = (contentType) => {
     const defaults = {
-      video: { autoplay: true, loop: true, mute: false },
+      video: { autoplay: true, loop: true, muted: true, volume: 100 },
       image: { scale: "cover", duration: 10 },
       text: { font_size: "16px", color: "#000000", background: "#ffffff" },
       webpage: { refresh_interval: 30000, zoom: 1.0 },
@@ -1253,9 +1254,6 @@ function ZoneSettingsPanel({ zone, contents, playlists, onUpdate, onClose }) {
       updateData.playlist_id = settings.playlist_id;
     }
 
-    console.log("🎯 Zone settings being saved:", updateData);
-    console.log("💾 Settings object:", settings);
-
     onUpdate(updateData);
     onClose();
   };
@@ -1632,7 +1630,7 @@ function ZoneSettingsPanel({ zone, contents, playlists, onUpdate, onClose }) {
                     </div>
                   )}
 
-                {settings.multiple_content && (
+                {settings.multiple_content && zone.content_type !== "video" && (
                   <div className="mt-2">
                     <label className="block text-xs text-gray-600 mb-1">
                       Durasi per Item (detik)
@@ -1650,6 +1648,14 @@ function ZoneSettingsPanel({ zone, contents, playlists, onUpdate, onClose }) {
                       }
                       className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
                     />
+                  </div>
+                )}
+
+                {settings.multiple_content && zone.content_type === "video" && (
+                  <div className="mt-2 p-2 bg-blue-50 rounded border border-blue-200">
+                    <p className="text-xs text-blue-700">
+                      Video akan diputar sesuai durasi aslinya
+                    </p>
                   </div>
                 )}
               </div>
@@ -1680,53 +1686,12 @@ function ZoneSettingsPanel({ zone, contents, playlists, onUpdate, onClose }) {
               ))}
             </select>
 
-            <div className="mt-3">
-              <label className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={settings.use_item_duration !== false}
-                  onChange={(e) =>
-                    setSettings((prev) => ({
-                      ...prev,
-                      use_item_duration: e.target.checked,
-                    }))
-                  }
-                />
-                <span className="text-xs text-gray-600">
-                  Gunakan durasi dari setiap item playlist
-                </span>
-              </label>
-              <p className="text-xs text-gray-500 mt-1">
-                Jika dicentang, setiap item akan menggunakan durasi yang sudah
-                diatur di playlist (5 detik, dll). Jika tidak, semua item akan
-                menggunakan durasi default di bawah.
+            <div className="mt-3 p-2 bg-blue-50 rounded border border-blue-200">
+              <p className="text-xs text-blue-700">
+                Setiap item akan menggunakan durasi yang sudah diatur di
+                playlist
               </p>
             </div>
-
-            {settings.use_item_duration === false && (
-              <div className="mt-3">
-                <label className="block text-xs text-gray-600 mb-1">
-                  Durasi Default per Item (detik)
-                </label>
-                <input
-                  type="number"
-                  min="1"
-                  max="300"
-                  value={settings.content_duration || 10}
-                  onChange={(e) =>
-                    setSettings((prev) => ({
-                      ...prev,
-                      content_duration: parseInt(e.target.value),
-                    }))
-                  }
-                  className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
-                />
-                <p className="text-xs text-gray-500 mt-1">
-                  Durasi ini akan digunakan untuk semua item dalam playlist jika
-                  opsi di atas tidak dicentang.
-                </p>
-              </div>
-            )}
           </div>
         )}
       </div>

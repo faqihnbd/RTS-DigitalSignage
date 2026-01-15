@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import logger from "../utils/logger";
 const API_URL = import.meta.env.VITE_API_URL;
 
 export default function DashboardRingkasan() {
@@ -21,7 +22,7 @@ export default function DashboardRingkasan() {
       })
       .then((data) => setSummary(data))
       .catch((err) => {
-        console.error("Error fetching summary:", err);
+        logger.logApiError("/api/stats/summary", err);
         setSummary(null);
         setError("Failed to load summary");
       })

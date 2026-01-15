@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import logger from "../utils/logger";
 const API_URL = import.meta.env.VITE_API_URL;
 
 export default function AuditLog() {
@@ -17,7 +18,10 @@ export default function AuditLog() {
         return res.json();
       })
       .then((data) => setLogs(Array.isArray(data) ? data : []))
-      .catch(() => setLogs([]))
+      .catch((err) => {
+        logger.logApiError("/api/audit", err);
+        setLogs([]);
+      })
       .finally(() => setLoading(false));
   }, []);
 

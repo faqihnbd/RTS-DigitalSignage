@@ -3,6 +3,7 @@ import * as XLSX from "xlsx";
 import { saveAs } from "file-saver";
 import jsPDF from "jspdf";
 import "jspdf-autotable";
+import logger from "../utils/logger";
 const API_URL = import.meta.env.VITE_API_URL;
 
 export default function PlaylistManagement() {
@@ -23,7 +24,10 @@ export default function PlaylistManagement() {
         return res.json();
       })
       .then((data) => setPlaylists(Array.isArray(data) ? data : []))
-      .catch(() => setPlaylists([]))
+      .catch((err) => {
+        logger.logApiError("/api/playlists", err);
+        setPlaylists([]);
+      })
       .finally(() => setLoading(false));
   }, []);
 

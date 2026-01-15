@@ -9,6 +9,7 @@ const {
   LayoutZone,
   sequelize,
 } = require("../models");
+const logger = require("../utils/logger");
 const router = express.Router();
 
 function canManagePlaylist(req) {
@@ -41,7 +42,11 @@ async function fixPlaylistOrder(playlistId) {
       }
     }
   } catch (error) {
-    console.error(`[ORDER-FIX] Error fixing playlist ${playlistId}:`, error);
+    logger.error(`[ORDER-FIX] Error fixing playlist ${playlistId}:`, {
+      error: error.message,
+      stack: error.stack,
+      playlistId,
+    });
   }
 }
 
@@ -306,7 +311,10 @@ router.post("/:playlistId/items/batch-order", async (req, res) => {
       items: updatedItems,
     });
   } catch (err) {
-    console.error("[BATCH-ORDER] Error:", err);
+    logger.logError(err, req, {
+      action: "Batch Order Update",
+      playlistId: req.params.playlistId,
+    });
     res.status(400).json({ message: err.message });
   }
 });

@@ -4,6 +4,8 @@ import { saveAs } from "file-saver";
 import jsPDF from "jspdf";
 import "jspdf-autotable";
 import Notification from "../components/Notification";
+import ExtendPackageModal from "../components/ExtendPackageModal";
+import logger from "../utils/logger";
 const API_URL = import.meta.env.VITE_API_URL;
 
 // Helper: generate subdomain from name
@@ -58,7 +60,7 @@ function TenantForm({ initial, onSave, onClose, loading, packages }) {
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email))
       return setError("Format email tidak valid");
     if (!packageId) return setError("Pilih paket");
-    if (duration < 1) return setError("Durasi minimal 1 bulan");
+    if (duration < 0) return setError("Durasi tidak boleh negatif");
 
     // Check if custom package selected
     const selectedPackage = packages.find((p) => p.id === parseInt(packageId));
@@ -179,7 +181,7 @@ function TenantForm({ initial, onSave, onClose, loading, packages }) {
         <input
           className="w-full border px-3 py-2 rounded mb-3"
           type="number"
-          min="1"
+          min="0"
           value={duration}
           onChange={(e) => setDuration(e.target.value)}
         />
@@ -209,8 +211,43 @@ export default function TenantManagement({ showNotif }) {
   const [deleteId, setDeleteId] = useState(null);
   const [actionLoading, setActionLoading] = useState(false);
   const [suspendId, setSuspendId] = useState(null);
+  const [extendId, setExtendId] = useState(null);
+  const [extendMonths, setExtendMonths] = useState(1);
 
-  // Fetch packages
+  // Helper function: calculate days until expiry
+  const getDaysUntilExpiry = (expiryDate) => {
+    if (!expiryDate) return null;
+    const now = new Date();
+    const expiry = new Date(expiryDate);
+    const diffTime = expiry - now;
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    return diffDays;
+  };
+
+  // Helper function: calculate remaining months from now to expired_at
+  const getRemainingMonths = (expiryDate) => {
+    if (!expiryDate) return null;
+    const now = new Date();
+    const expiry = new Date(expiryDate);
+
+    // If already expired, return 0
+    if (expiry <= now) return 0;
+
+    // Calculate remaining months
+    const yearsDiff = expiry.getFullYear() - now.getFullYear();
+    const monthsDiff = expiry.getMonth() - now.getMonth();
+    const daysDiff = expiry.getDate() - now.getDate();
+
+    let totalMonths = yearsDiff * 12 + monthsDiff;
+
+    // If days are negative, subtract 1 month
+    if (daysDiff < 0) {
+      totalMonths -= 1;
+    }
+
+    return Math.max(0, totalMonths);
+  };
+
   const fetchPackages = () => {
     const token = localStorage.getItem("token");
     fetch(`${API_URL}/api/packages`, {
@@ -275,8 +312,12 @@ export default function TenantManagement({ showNotif }) {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!res.ok) throw new Error(await res.text());
+      logger.logTenant("Tenant Deleted", { tenantId: deleteId });
       showNotif && showNotif("success", "Tenant berhasil dihapus");
     } catch {
+      logger.logApiError("/api/tenants (delete)", new Error("Delete failed"), {
+        tenantId: deleteId,
+      });
       showNotif && showNotif("error", "Gagal menghapus tenant");
     }
     setDeleteId(null);
@@ -303,6 +344,10 @@ export default function TenantManagement({ showNotif }) {
         credentials: "include",
       });
       if (!res.ok) throw new Error(await res.text());
+      logger.logTenant(editTenant ? "Tenant Updated" : "Tenant Created", {
+        tenantId: editTenant?.id,
+        name: data.name,
+      });
       showNotif &&
         showNotif(
           "success",
@@ -311,6 +356,7 @@ export default function TenantManagement({ showNotif }) {
       setShowForm(false);
       setEditTenant(null);
     } catch {
+      logger.logApiError("/api/tenants (save)", new Error("Save failed"));
       showNotif && showNotif("error", "Gagal menyimpan tenant");
     }
     setActionLoading(false);
@@ -318,6 +364,38 @@ export default function TenantManagement({ showNotif }) {
   };
   const handleSuspend = (id) => {
     setSuspendId(id);
+  };
+  const handleExtend = (id) => {
+    setExtendId(id);
+  };
+  const doExtend = async () => {
+    if (!extendMonths || extendMonths < 1) return;
+
+    setActionLoading(true);
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch(
+        `${API_URL}/api/tenants/${extendId}/extend-package`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ duration_months: extendMonths }),
+          credentials: "include",
+        }
+      );
+      if (!res.ok) throw new Error(await res.text());
+      showNotif && showNotif("success", "Paket berhasil diperpanjang");
+    } catch (err) {
+      console.error("Error extending package:", err);
+      showNotif && showNotif("error", "Gagal memperpanjang paket");
+    }
+    setExtendId(null);
+    setExtendMonths(1);
+    setActionLoading(false);
+    fetchTenants();
   };
   const doSuspend = async (id, suspend) => {
     setActionLoading(true);
@@ -329,17 +407,18 @@ export default function TenantManagement({ showNotif }) {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ suspend }),
+        body: JSON.stringify({ suspended: suspend }),
         credentials: "include",
       });
       if (!res.ok) throw new Error(await res.text());
       showNotif &&
         showNotif(
-          "success",
-          suspend ? "Tenant disuspend" : "Tenant diaktifkan"
+          suspend ? "Tenant berhasil disuspend" : "Tenant berhasil diaktifkan",
+          "success"
         );
-    } catch {
-      showNotif && showNotif("error", "Gagal update status tenant");
+    } catch (err) {
+      console.error("Error suspending tenant:", err);
+      showNotif && showNotif("Gagal update status tenant", "error");
     }
     setSuspendId(null);
     setActionLoading(false);
@@ -389,14 +468,25 @@ export default function TenantManagement({ showNotif }) {
               }
               const displayMaxDevices =
                 tenant.custom_max_devices || pkg.max_devices || "-";
+              const remainingMonths = getRemainingMonths(tenant.expired_at);
+              const sisaDurasi =
+                remainingMonths !== null
+                  ? remainingMonths === 0
+                    ? "Habis"
+                    : `${remainingMonths} bulan`
+                  : "-";
               return {
                 Nama: tenant.name,
                 Email: tenant.email,
                 Paket: pkg.name || "-",
                 Layar: displayMaxDevices,
-                Durasi: durasiBulan + " bulan",
+                "Durasi Paket": durasiBulan + " bulan",
+                "Sisa Durasi": sisaDurasi,
                 Status:
                   tenant.status + (tenant.suspended ? " (Suspended)" : ""),
+                "Expired At": tenant.expired_at
+                  ? new Date(tenant.expired_at).toLocaleDateString("id-ID")
+                  : "-",
               };
             });
             const ws = XLSX.utils.json_to_sheet(data);
@@ -421,7 +511,17 @@ export default function TenantManagement({ showNotif }) {
             const doc = new jsPDF();
             doc.text("Data Tenant", 14, 14);
             doc.autoTable({
-              head: [["Nama", "Email", "Paket", "Layar", "Durasi", "Status"]],
+              head: [
+                [
+                  "Nama",
+                  "Email",
+                  "Paket",
+                  "Layar",
+                  "Durasi Paket",
+                  "Sisa Durasi",
+                  "Status",
+                ],
+              ],
               body: filtered.map((tenant) => {
                 const pkg =
                   packages.find((p) => p.id === tenant.package_id) || {};
@@ -440,12 +540,20 @@ export default function TenantManagement({ showNotif }) {
                 }
                 const displayMaxDevices =
                   tenant.custom_max_devices || pkg.max_devices || "-";
+                const remainingMonths = getRemainingMonths(tenant.expired_at);
+                const sisaDurasi =
+                  remainingMonths !== null
+                    ? remainingMonths === 0
+                      ? "Habis"
+                      : `${remainingMonths} bulan`
+                    : "-";
                 return [
                   tenant.name,
                   tenant.email,
                   pkg.name || "-",
                   displayMaxDevices,
                   durasiBulan + " bulan",
+                  sisaDurasi,
                   tenant.status + (tenant.suspended ? " (Suspended)" : ""),
                 ];
               }),
@@ -527,6 +635,7 @@ export default function TenantManagement({ showNotif }) {
               <th className="px-4 py-2 border">Layar</th>
               <th className="px-4 py-2 border">Durasi</th>
               <th className="px-4 py-2 border">Status</th>
+              <th className="px-4 py-2 border">Expiry</th>
               <th className="px-4 py-2 border">Aksi</th>
             </tr>
           </thead>
@@ -555,19 +664,96 @@ export default function TenantManagement({ showNotif }) {
               const displayStorageGb =
                 tenant.custom_storage_gb || pkg.storage_gb || "-";
 
+              // Calculate remaining months (sisa durasi)
+              const remainingMonths = getRemainingMonths(tenant.expired_at);
+
+              // Calculate days until expiry
+              const daysUntilExpiry = getDaysUntilExpiry(tenant.expired_at);
+              let expiryStatus = null;
+              let expiryColor = "";
+              if (daysUntilExpiry === null) {
+                expiryStatus = "No expiry";
+                expiryColor = "text-gray-500";
+              } else if (daysUntilExpiry < 0) {
+                expiryStatus = `Expired ${Math.abs(daysUntilExpiry)} hari lalu`;
+                expiryColor = "text-red-600 font-semibold";
+              } else if (daysUntilExpiry === 0) {
+                expiryStatus = "Expired hari ini";
+                expiryColor = "text-red-600 font-semibold";
+              } else if (daysUntilExpiry <= 7) {
+                expiryStatus = `${daysUntilExpiry} hari lagi`;
+                expiryColor = "text-orange-600 font-semibold";
+              } else if (daysUntilExpiry <= 30) {
+                expiryStatus = `${daysUntilExpiry} hari lagi`;
+                expiryColor = "text-yellow-600";
+              } else {
+                expiryStatus = `${daysUntilExpiry} hari lagi`;
+                expiryColor = "text-green-600";
+              }
+
               return (
-                <tr key={tenant.id}>
+                <tr
+                  key={tenant.id}
+                  className={tenant.status === "expired" ? "bg-red-50" : ""}
+                >
                   <td className="px-4 py-2 border">{tenant.name}</td>
                   <td className="px-4 py-2 border">{tenant.email || "-"}</td>
                   <td className="px-4 py-2 border">{pkg.name || "-"}</td>
                   <td className="px-4 py-2 border">{displayMaxDevices}</td>
-                  <td className="px-4 py-2 border">{durasiBulan} bulan</td>
                   <td className="px-4 py-2 border">
-                    {tenant.status}
+                    <div className="text-sm">
+                      <div className="font-medium text-gray-700">
+                        {remainingMonths === 0 ? "-" : `${durasiBulan} bulan`}
+                      </div>
+                      {tenant.expired_at && (
+                        <div
+                          className={
+                            remainingMonths === 0
+                              ? "text-xs text-red-600 font-semibold mt-1"
+                              : remainingMonths <= 1
+                              ? "text-xs text-orange-600 font-semibold mt-1"
+                              : "text-xs text-green-600 mt-1"
+                          }
+                        >
+                          {remainingMonths === 0
+                            ? "⚠️ Habis"
+                            : `⏱️ Sisa: ${remainingMonths} bulan`}
+                        </div>
+                      )}
+                    </div>
+                  </td>
+                  <td className="px-4 py-2 border">
+                    {tenant.status === "expired" ? (
+                      <span className="inline-flex items-center px-2 py-1 text-xs font-semibold text-red-700 bg-red-100 rounded">
+                        ⚠️ EXPIRED
+                      </span>
+                    ) : tenant.status === "suspended" ? (
+                      <span className="inline-flex items-center px-2 py-1 text-xs font-semibold text-gray-700 bg-gray-200 rounded">
+                        SUSPENDED
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center px-2 py-1 text-xs font-semibold text-green-700 bg-green-100 rounded">
+                        ✓ ACTIVE
+                      </span>
+                    )}
                     {tenant.suspended && (
                       <span className="ml-2 text-xs bg-red-200 text-red-700 px-2 py-1 rounded">
                         Suspended
                       </span>
+                    )}
+                  </td>
+                  <td className="px-4 py-2 border">
+                    {tenant.expired_at ? (
+                      <div className="text-sm">
+                        <div className={expiryColor}>{expiryStatus}</div>
+                        <div className="text-xs text-gray-500 mt-1">
+                          {new Date(tenant.expired_at).toLocaleDateString(
+                            "id-ID"
+                          )}
+                        </div>
+                      </div>
+                    ) : (
+                      <span className="text-gray-400 text-sm">-</span>
                     )}
                   </td>
                   <td className="px-4 py-2 border flex gap-2">
@@ -583,7 +769,17 @@ export default function TenantManagement({ showNotif }) {
                     >
                       Hapus
                     </button>
-                    {tenant.suspended ? (
+                    {(tenant.status === "expired" ||
+                      (daysUntilExpiry !== null && daysUntilExpiry <= 30)) && (
+                      <button
+                        onClick={() => handleExtend(tenant.id)}
+                        className="bg-blue-600 text-white px-2 py-1 rounded hover:bg-blue-700 text-xs"
+                        title="Perpanjang Paket"
+                      >
+                        🔄 Extend
+                      </button>
+                    )}
+                    {tenant.status === "suspended" || tenant.suspended ? (
                       <button
                         onClick={() => handleSuspend(tenant.id)}
                         className="bg-green-600 text-white px-2 py-1 rounded hover:bg-green-700"
@@ -640,9 +836,14 @@ export default function TenantManagement({ showNotif }) {
         <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50">
           <div className="bg-white p-6 rounded shadow w-full max-w-sm">
             <div className="mb-4">
-              {tenants.find((t) => t.id === suspendId)?.suspended
-                ? "Aktifkan tenant ini?"
-                : "Suspend tenant ini?"}
+              {(() => {
+                const tenant = tenants.find((t) => t.id === suspendId);
+                const isSuspended =
+                  tenant?.status === "suspended" || tenant?.suspended;
+                return isSuspended
+                  ? "Aktifkan tenant ini?"
+                  : "Suspend tenant ini?";
+              })()}
             </div>
             <div className="flex gap-2 justify-end">
               <button
@@ -652,20 +853,68 @@ export default function TenantManagement({ showNotif }) {
                 Batal
               </button>
               <button
-                onClick={() =>
-                  doSuspend(
-                    suspendId,
-                    !tenants.find((t) => t.id === suspendId)?.suspended
-                  )
-                }
+                onClick={() => {
+                  const tenant = tenants.find((t) => t.id === suspendId);
+                  const isSuspended =
+                    tenant?.status === "suspended" || tenant?.suspended;
+                  doSuspend(suspendId, !isSuspended);
+                }}
                 className="px-4 py-2 rounded bg-gray-700 text-white"
                 disabled={actionLoading}
               >
                 {actionLoading
                   ? "Memproses..."
-                  : tenants.find((t) => t.id === suspendId)?.suspended
-                  ? "Aktifkan"
-                  : "Suspend"}
+                  : (() => {
+                      const tenant = tenants.find((t) => t.id === suspendId);
+                      const isSuspended =
+                        tenant?.status === "suspended" || tenant?.suspended;
+                      return isSuspended ? "Aktifkan" : "Suspend";
+                    })()}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {extendId && (
+        <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50">
+          <div className="bg-white p-6 rounded shadow w-full max-w-md">
+            <h3 className="text-xl font-semibold mb-4">🔄 Perpanjang Paket</h3>
+            <div className="mb-4">
+              <p className="text-sm text-gray-600 mb-2">
+                Tenant:{" "}
+                <strong>{tenants.find((t) => t.id === extendId)?.name}</strong>
+              </p>
+              <p className="text-sm text-gray-600 mb-4">
+                Email: {tenants.find((t) => t.id === extendId)?.email}
+              </p>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Durasi Perpanjangan (bulan):
+              </label>
+              <input
+                type="number"
+                min="1"
+                value={extendMonths}
+                onChange={(e) => setExtendMonths(e.target.value)}
+                className="w-full border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <p className="text-xs text-gray-500 mt-2">
+                💡 Paket akan diperpanjang {extendMonths} bulan dari tanggal
+                expiry saat ini.
+              </p>
+            </div>
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={() => setExtendId(null)}
+                className="px-4 py-2 rounded bg-gray-200 hover:bg-gray-300"
+              >
+                Batal
+              </button>
+              <button
+                onClick={doExtend}
+                className="px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700"
+                disabled={actionLoading || !extendMonths || extendMonths < 1}
+              >
+                {actionLoading ? "Memproses..." : "Perpanjang Paket"}
               </button>
             </div>
           </div>

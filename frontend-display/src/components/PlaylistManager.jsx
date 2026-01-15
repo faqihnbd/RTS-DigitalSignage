@@ -1,4 +1,5 @@
 import StorageService from "../services/StorageService";
+import logger from "../utils/logger";
 
 class PlaylistManager {
   constructor(playerService = null) {
@@ -38,7 +39,11 @@ class PlaylistManager {
         this.processDownloadQueue();
       }
     } catch (error) {
-      console.error("Error caching playlist:", error);
+      logger.logPlaylist(
+        "Cache Playlist Error",
+        { error: error.message },
+        "error"
+      );
     }
   }
 
@@ -56,7 +61,11 @@ class PlaylistManager {
       try {
         await this.downloadAndCacheItem(item);
       } catch (error) {
-        console.error(`Failed to cache ${item.name}:`, error);
+        logger.logContent(
+          "Cache Item Failed",
+          { itemName: item.name, error: error.message },
+          "error"
+        );
       }
     }
 
@@ -87,13 +96,17 @@ class PlaylistManager {
         item.content_type
       );
     } catch (error) {
-      console.error(`Download failed for content ${item.content_id}:`, error);
+      logger.logContent(
+        "Download Failed",
+        { contentId: item.content_id, error: error.message },
+        "error"
+      );
       throw new Error(`Download failed: ${error.message}`);
     }
   }
 
   getContentUrl(item) {
-    const baseUrl = import.meta.env.VITE_API_URL || "http://localhost:3000";
+    const baseUrl = import.meta.env.VITE_API_URL;
     return `${baseUrl}/api/player/content/${item.content_id}`;
   }
 
@@ -105,7 +118,7 @@ class PlaylistManager {
 
       await this.storageService.clearOldCache(cutoffDate);
     } catch (error) {
-      console.error("Error clearing old cache:", error);
+      logger.logAction("Cache Clear Error", { error: error.message }, "error");
     }
   }
 

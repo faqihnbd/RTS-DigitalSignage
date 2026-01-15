@@ -61,12 +61,15 @@ router.put("/:id", async (req, res) => {
   if (!user || !canManageUser(req, user))
     return res.status(404).json({ message: "Not found" });
   try {
-    const { name, email, password, role, is_active } = req.body;
+    const { name, email, password, role, is_active, tenant_id } = req.body;
     if (password) user.password_hash = await bcrypt.hash(password, 10);
     if (name) user.name = name;
     if (email) user.email = email;
     if (role && req.user.role === "super_admin") user.role = role;
     if (is_active !== undefined) user.is_active = is_active;
+    // Allow super_admin to change tenant_id
+    if (tenant_id && req.user.role === "super_admin")
+      user.tenant_id = tenant_id;
     await user.save();
     res.json({ ...user.toJSON(), password_hash: undefined });
   } catch (err) {

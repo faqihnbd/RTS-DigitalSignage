@@ -5,7 +5,7 @@ export class PlayerService {
   constructor(deviceId, token) {
     this.deviceId = deviceId;
     this.token = token;
-    this.baseURL = import.meta.env.VITE_API_URL || "http://localhost:3000";
+    this.baseURL = import.meta.env.VITE_API_URL;
     this.storageService = new StorageService();
 
     // Use existing session ID or generate new one
@@ -84,10 +84,22 @@ export class PlayerService {
       (response) => response,
       async (error) => {
         if (error.response?.status === 401) {
-          // Token expired or invalid - clear auth and let app handle it
+          // Log error with full response data
           console.error("[DEBUG] 401 Unauthorized - clearing credentials");
-          await this.storageService.clearAuth();
-          // Don't call handleAuthError to avoid reload loop
+          console.error(
+            "[DEBUG] Error response from backend:",
+            error.response?.data
+          );
+
+          // Don't clear auth here if it's PACKAGE_EXPIRED or TENANT_SUSPENDED
+          // Let App.jsx handle these specific cases
+          const errorData = error.response?.data;
+          if (
+            errorData?.error !== "PACKAGE_EXPIRED" &&
+            errorData?.error !== "TENANT_SUSPENDED"
+          ) {
+            await this.storageService.clearAuth();
+          }
         }
         return Promise.reject(error);
       }
@@ -98,27 +110,49 @@ export class PlayerService {
     try {
       await this.ensureSessionId();
 
-      // Add cache busting parameter if forceFresh
-      const url = forceFresh
-        ? `/api/player/data/${this.deviceId}?_t=${Date.now()}`
-        : `/api/player/data/${this.deviceId}`;
+      // Get cached ETag for conditional request
+      const cachedETag = await this.storageService.getItem("playerData_etag");
+      const cachedData = await this.storageService.getLastSync();
 
-      const response = await this.api.get(url);
-      const playerData = response.data;
+      const url = `/api/player/data/${this.deviceId}`;
 
-      // Clear old cache if forceFresh
-      if (forceFresh) {
-        await this.storageService.clearCache();
+      // Setup headers for conditional request (saves bandwidth if data hasn't changed)
+      const headers = {};
+      if (!forceFresh && cachedETag) {
+        headers["If-None-Match"] = cachedETag;
       }
 
-      // Save to cache for offline access
-      await this.storageService.saveLastSync({
-        deviceId: this.deviceId,
-        playerData: playerData,
-        success: true,
-        timestamp: Date.now(),
-      });
-      return playerData;
+      try {
+        const response = await this.api.get(url, { headers });
+        const playerData = response.data;
+
+        // Save ETag for next request
+        const newETag = response.headers["etag"];
+        if (newETag) {
+          await this.storageService.setItem("playerData_etag", newETag);
+        }
+
+        // Clear old cache if forceFresh
+        if (forceFresh) {
+          await this.storageService.clearCache();
+        }
+
+        // Save to cache for offline access
+        await this.storageService.saveLastSync({
+          deviceId: this.deviceId,
+          playerData: playerData,
+          success: true,
+          timestamp: Date.now(),
+        });
+        return playerData;
+      } catch (error) {
+        // 304 Not Modified - use cached data (saves bandwidth!)
+        if (error.response?.status === 304 && cachedData?.playerData) {
+          console.log("[CACHE] Data not modified, using cached version");
+          return cachedData.playerData;
+        }
+        throw error;
+      }
     } catch (error) {
       if (error.response) {
         console.error(
@@ -126,23 +160,39 @@ export class PlayerService {
           error.response.data
         );
 
-        // Handle device in use error (409)
-        if (error.response.status === 409) {
-          const errorData = error.response.data;
-          throw new Error(
-            errorData.message || "Device is currently in use by another session"
-          );
+        // Create enhanced error with specific error type and message
+        const errorData = error.response.data;
+        const errorType = errorData?.error || "UNKNOWN_ERROR";
+        const errorMessage = errorData?.message || error.message;
+
+        // Create error with specific message based on error type
+        let specificMessage = errorMessage;
+        if (errorType === "INVALID_DEVICE_ID") {
+          specificMessage =
+            errorMessage || "Device ID tidak valid atau tidak ditemukan";
+        } else if (errorType === "INVALID_TOKEN") {
+          specificMessage = errorMessage || "License Key tidak valid";
+        } else if (errorType === "TENANT_NOT_FOUND") {
+          specificMessage = errorMessage || "Tenant tidak ditemukan";
+        } else if (errorType === "PACKAGE_EXPIRED") {
+          specificMessage = errorMessage || "Paket telah habis";
+        } else if (errorType === "TENANT_SUSPENDED") {
+          specificMessage = errorMessage || "Tenant telah ditangguhkan";
         }
+
+        // Re-throw the error with response data and specific message
+        const enhancedError = new Error(specificMessage);
+        enhancedError.response = error.response;
+        enhancedError.errorType = errorType;
+        throw enhancedError;
       } else {
         console.error("[DEBUG] Error fetching player data:", error);
       }
 
-      // Try to load from cache if network fails (but not for 409 errors)
-      if (!error.response || error.response.status !== 409) {
-        const lastSync = await this.storageService.getLastSync();
-        if (lastSync && lastSync.playerData) {
-          return lastSync.playerData;
-        }
+      // Try to load from cache if network fails
+      const lastSync = await this.storageService.getLastSync();
+      if (lastSync && lastSync.playerData) {
+        return lastSync.playerData;
       }
 
       throw new Error(`Failed to load player data: ${error.message}`);

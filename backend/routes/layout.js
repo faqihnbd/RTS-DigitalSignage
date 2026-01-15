@@ -10,6 +10,7 @@ const {
   User,
 } = require("../models");
 const authMiddleware = require("./authMiddleware");
+const logger = require("../utils/logger");
 
 // Predefined layout templates
 const LAYOUT_TEMPLATES = {
@@ -194,9 +195,21 @@ router.get("/", authMiddleware, async (req, res) => {
       ],
     });
 
-    res.json(layouts);
+    // Include displays from configuration in response for each layout
+    const layoutsData = layouts.map((layout) => {
+      const layoutData = layout.toJSON();
+      if (layoutData.configuration && layoutData.configuration.displays) {
+        layoutData.displays = layoutData.configuration.displays;
+      }
+      return layoutData;
+    });
+
+    res.json(layoutsData);
   } catch (error) {
-    console.error("Error fetching layouts:", error);
+    logger.logError(error, req, {
+      action: "fetch_layouts",
+      tenantId: req.user.tenant_id,
+    });
     res.status(500).json({ error: "Failed to fetch layouts" });
   }
 });
@@ -206,7 +219,7 @@ router.get("/templates", authMiddleware, async (req, res) => {
   try {
     res.json(LAYOUT_TEMPLATES);
   } catch (error) {
-    console.error("Error fetching layout templates:", error);
+    logger.logError(error, req, { action: "fetch_layout_templates" });
     res.status(500).json({ error: "Failed to fetch layout templates" });
   }
 });
@@ -254,9 +267,19 @@ router.get("/:id", authMiddleware, async (req, res) => {
       return res.status(404).json({ error: "Layout not found" });
     }
 
-    res.json(layout);
+    // Include displays from configuration in response
+    const layoutData = layout.toJSON();
+    if (layoutData.configuration && layoutData.configuration.displays) {
+      layoutData.displays = layoutData.configuration.displays;
+    }
+
+    res.json(layoutData);
   } catch (error) {
-    console.error("Error fetching layout:", error);
+    logger.logError(error, req, {
+      action: "fetch_layout",
+      layoutId: req.params.id,
+      tenantId: req.user.tenant_id,
+    });
     res.status(500).json({ error: "Failed to fetch layout" });
   }
 });
@@ -319,9 +342,21 @@ router.post("/from-template", authMiddleware, async (req, res) => {
       ],
     });
 
-    res.status(201).json(createdLayout);
+    // Include displays from configuration in response
+    const createdLayoutData = createdLayout.toJSON();
+    if (
+      createdLayoutData.configuration &&
+      createdLayoutData.configuration.displays
+    ) {
+      createdLayoutData.displays = createdLayoutData.configuration.displays;
+    }
+
+    res.status(201).json(createdLayoutData);
   } catch (error) {
-    console.error("Error creating layout from template:", error);
+    logger.logError(error, req, {
+      action: "create_layout_from_template",
+      tenantId: req.user.tenant_id,
+    });
     res.status(500).json({ error: "Failed to create layout" });
   }
 });
@@ -383,9 +418,21 @@ router.post("/", authMiddleware, async (req, res) => {
       ],
     });
 
-    res.status(201).json(createdLayout);
+    // Include displays from configuration in response
+    const createdLayoutData = createdLayout.toJSON();
+    if (
+      createdLayoutData.configuration &&
+      createdLayoutData.configuration.displays
+    ) {
+      createdLayoutData.displays = createdLayoutData.configuration.displays;
+    }
+
+    res.status(201).json(createdLayoutData);
   } catch (error) {
-    console.error("Error creating layout:", error);
+    logger.logError(error, req, {
+      action: "create_layout",
+      tenantId: req.user.tenant_id,
+    });
     res.status(500).json({ error: "Failed to create layout" });
   }
 });
@@ -461,9 +508,22 @@ router.put("/:id", authMiddleware, async (req, res) => {
       ],
     });
 
-    res.json(updatedLayout);
+    // Include displays from configuration in response
+    const updatedLayoutData = updatedLayout.toJSON();
+    if (
+      updatedLayoutData.configuration &&
+      updatedLayoutData.configuration.displays
+    ) {
+      updatedLayoutData.displays = updatedLayoutData.configuration.displays;
+    }
+
+    res.json(updatedLayoutData);
   } catch (error) {
-    console.error("Error updating layout:", error);
+    logger.logError(error, req, {
+      action: "update_layout",
+      layoutId: req.params.id,
+      tenantId: req.user.tenant_id,
+    });
     res.status(500).json({ error: "Failed to update layout" });
   }
 });
@@ -492,7 +552,11 @@ router.delete("/:id", authMiddleware, async (req, res) => {
 
     res.json({ message: "Layout deleted successfully" });
   } catch (error) {
-    console.error("Error deleting layout:", error);
+    logger.logError(error, req, {
+      action: "delete_layout",
+      layoutId: req.params.id,
+      tenantId: req.user.tenant_id,
+    });
     res.status(500).json({ error: "Failed to delete layout" });
   }
 });
@@ -546,7 +610,12 @@ router.post(
 
       res.json(updatedZone);
     } catch (error) {
-      console.error("Error assigning content to zone:", error);
+      logger.logError(error, req, {
+        action: "assign_content_to_zone",
+        layoutId: req.params.layoutId,
+        zoneId: req.params.zoneId,
+        tenantId: req.user.tenant_id,
+      });
       res.status(500).json({ error: "Failed to assign content" });
     }
   }

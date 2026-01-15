@@ -7,12 +7,15 @@ import React, { useState, useRef, useEffect } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import Layout from "./components/Layout";
 import Sidebar from "./components/Sidebar";
+import ErrorBoundary from "./components/ErrorBoundary";
 import Login from "./pages/Login";
 import TenantManagement from "./pages/TenantManagement";
 import StatistikGlobal from "./pages/StatistikGlobal";
 import PaymentMonitoring from "./pages/PaymentMonitoring";
 import UserManagement from "./pages/UserManagement";
 import Notification from "./components/Notification";
+import { isTokenExpired } from "./utils/tokenUtils";
+import logger from "./utils/logger";
 
 function Dashboard() {
   const [stats, setStats] = React.useState({
@@ -252,6 +255,18 @@ export default function App() {
   });
   const dropdownRef = useRef(null);
 
+  // Log app initialization
+  useEffect(() => {
+    logger.info("App Initialized", {
+      version: import.meta.env.VITE_APP_VERSION || "1.0.0",
+      environment: import.meta.env.MODE,
+    });
+
+    return () => {
+      logger.flush();
+    };
+  }, []);
+
   // Fungsi global untuk menampilkan notifikasi
   const showNotif = (type, message, duration = 3000) => {
     setNotif({ show: true, type, message, duration });
@@ -262,9 +277,14 @@ export default function App() {
     setUser(user);
     localStorage.setItem("token", token);
     localStorage.setItem("user", JSON.stringify(user));
+    logger.logAuth("Login Success", true, {
+      userId: user?.id,
+      role: user?.role,
+    });
     showNotif("success", "Login berhasil!");
   };
   const handleLogout = () => {
+    logger.logAuth("Logout", true, { userId: user?.id });
     setToken(null);
     setUser(null);
     localStorage.removeItem("token");
@@ -283,67 +303,99 @@ export default function App() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  // Check token expiry on mount and every minute
+  useEffect(() => {
+    if (!token) return;
+
+    const checkTokenExpiry = () => {
+      if (isTokenExpired(token)) {
+        showNotif(
+          "error",
+          "Sesi Anda telah berakhir (24 jam). Silakan login kembali.",
+          5000
+        );
+        setTimeout(() => {
+          handleLogout();
+        }, 2000);
+      }
+    };
+
+    // Check immediately
+    checkTokenExpiry();
+
+    // Check every minute
+    const interval = setInterval(checkTokenExpiry, 60 * 1000);
+
+    return () => clearInterval(interval);
+  }, [token]);
+
   if (!token || !user) {
-    return <Login onLogin={handleLogin} />;
+    return (
+      <ErrorBoundary>
+        <Login onLogin={handleLogin} />
+      </ErrorBoundary>
+    );
   }
 
   return (
-    <BrowserRouter>
-      <Notification
-        type={notif.type}
-        message={notif.message}
-        show={notif.show}
-        duration={notif.duration}
-        onClose={() => setNotif({ ...notif, show: false })}
-      />
-      <div className="flex min-h-screen bg-gray-50">
-        <Sidebar />
-        <div className="flex-1 flex flex-col ml-60">
-          <Layout user={user} onLogout={handleLogout}>
-            {/* Untuk menampilkan notifikasi dari halaman lain, showNotif bisa diteruskan via props */}
-            <Routes>
-              <Route path="/" element={<Dashboard />} />
-              <Route
-                path="/tenants"
-                element={<TenantManagement showNotif={showNotif} />}
-              />
-              <Route
-                path="/stats"
-                element={<StatistikGlobal showNotif={showNotif} />}
-              />
-              <Route
-                path="/payments"
-                element={<PaymentMonitoring showNotif={showNotif} />}
-              />
-              <Route
-                path="/export"
-                element={<ExportLaporan showNotif={showNotif} />}
-              />
-              <Route
-                path="/audit"
-                element={<AuditLog showNotif={showNotif} />}
-              />
-              <Route
-                path="/notifications"
-                element={<NotificationCenter showNotif={showNotif} />}
-              />
-              <Route
-                path="/summary"
-                element={<DashboardRingkasan showNotif={showNotif} />}
-              />
-              <Route
-                path="/user-tenant"
-                element={<UserTenantManagement showNotif={showNotif} />}
-              />
-              <Route
-                path="/users"
-                element={<UserManagement showNotif={showNotif} />}
-              />
-              <Route path="*" element={<Navigate to="/" />} />
-            </Routes>
-          </Layout>
+    <ErrorBoundary>
+      <BrowserRouter>
+        <Notification
+          type={notif.type}
+          message={notif.message}
+          show={notif.show}
+          duration={notif.duration}
+          onClose={() => setNotif({ ...notif, show: false })}
+        />
+        <div className="flex min-h-screen bg-gray-50">
+          <Sidebar />
+          <div className="flex-1 flex flex-col ml-60">
+            <Layout user={user} onLogout={handleLogout}>
+              {/* Untuk menampilkan notifikasi dari halaman lain, showNotif bisa diteruskan via props */}
+              <Routes>
+                <Route path="/" element={<Dashboard />} />
+                <Route
+                  path="/tenants"
+                  element={<TenantManagement showNotif={showNotif} />}
+                />
+                <Route
+                  path="/stats"
+                  element={<StatistikGlobal showNotif={showNotif} />}
+                />
+                <Route
+                  path="/payments"
+                  element={<PaymentMonitoring showNotif={showNotif} />}
+                />
+                <Route
+                  path="/export"
+                  element={<ExportLaporan showNotif={showNotif} />}
+                />
+                <Route
+                  path="/audit"
+                  element={<AuditLog showNotif={showNotif} />}
+                />
+                <Route
+                  path="/notifications"
+                  element={<NotificationCenter showNotif={showNotif} />}
+                />
+                <Route
+                  path="/summary"
+                  element={<DashboardRingkasan showNotif={showNotif} />}
+                />
+                <Route
+                  path="/user-tenant"
+                  element={<UserTenantManagement showNotif={showNotif} />}
+                />
+                <Route
+                  path="/users"
+                  element={<UserManagement showNotif={showNotif} />}
+                />
+                <Route path="*" element={<Navigate to="/" />} />
+              </Routes>
+            </Layout>
+          </div>
         </div>
-      </div>
-    </BrowserRouter>
+      </BrowserRouter>
+    </ErrorBoundary>
   );
 }

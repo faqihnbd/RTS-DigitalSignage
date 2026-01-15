@@ -22,7 +22,9 @@
     "mysql2": "^3.9.7",
     "pdfkit": "^0.17.1",
     "sequelize": "^6.37.1",
-    "sequelize-cli": "^6.6.3"
+    "sequelize-cli": "^6.6.3",
+    "winston": "^3.19.0",
+    "winston-daily-rotate-file": "^5.0.0"
   },
   "devDependencies": {
     "nodemon": "^3.1.0"

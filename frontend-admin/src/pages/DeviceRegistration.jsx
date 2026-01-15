@@ -12,8 +12,10 @@ import {
   DevicePhoneMobileIcon,
   XMarkIcon,
   PlayIcon,
+  CheckIcon,
 } from "@heroicons/react/24/outline";
 import { useNotification } from "../components/NotificationProvider";
+import logger from "../utils/logger";
 
 export default function DeviceRegistration() {
   const [devices, setDevices] = useState([]);
@@ -40,6 +42,11 @@ export default function DeviceRegistration() {
   const [assigningDevice, setAssigningDevice] = useState(null);
   const [selectedPlaylist, setSelectedPlaylist] = useState("");
   const [assignLoading, setAssignLoading] = useState(false);
+  // Bulk assign states
+  const [selectedDevices, setSelectedDevices] = useState([]);
+  const [showBulkAssignModal, setShowBulkAssignModal] = useState(false);
+  const [selectedBulkPlaylist, setSelectedBulkPlaylist] = useState("");
+  const [bulkAssignLoading, setBulkAssignLoading] = useState(false);
   const { confirm, error: showError } = useNotification();
 
   // Fetch playlists
@@ -69,6 +76,7 @@ export default function DeviceRegistration() {
     fetchStats();
     fetchPlaylists();
   }, []);
+
   // Assign playlist to device
   const handleAssignPlaylist = async () => {
     if (!assigningDevice || !selectedPlaylist) return;
@@ -102,6 +110,59 @@ export default function DeviceRegistration() {
       showError("Gagal assign playlist");
     }
     setAssignLoading(false);
+  };
+
+  // Bulk assign playlist to multiple devices
+  const handleBulkAssignPlaylist = async () => {
+    if (selectedDevices.length === 0 || !selectedBulkPlaylist) return;
+
+    setBulkAssignLoading(true);
+    try {
+      const token =
+        localStorage.getItem("admin_token") ||
+        sessionStorage.getItem("admin_token");
+
+      // Assign playlist to each selected device
+      const promises = selectedDevices.map((deviceId) =>
+        fetch(
+          `${
+            import.meta.env.VITE_API_BASE_URL
+          }/api/devices/${deviceId}/assign-playlist`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({ playlist_id: selectedBulkPlaylist }),
+          }
+        )
+      );
+
+      const results = await Promise.all(promises);
+      const successCount = results.filter((r) => r.ok).length;
+      const failCount = results.length - successCount;
+
+      if (successCount > 0) {
+        await fetchDevices();
+        setShowBulkAssignModal(false);
+        setSelectedBulkPlaylist("");
+        setSelectedDevices([]);
+
+        if (failCount === 0) {
+          // All successful - silently succeed
+        } else {
+          showError(
+            `${successCount} device(s) berhasil, ${failCount} device(s) gagal`
+          );
+        }
+      } else {
+        showError("Gagal assign playlist ke semua devices");
+      }
+    } catch (err) {
+      showError("Terjadi kesalahan saat assign playlist");
+    }
+    setBulkAssignLoading(false);
   };
 
   const fetchDevices = async () => {
@@ -214,6 +275,11 @@ export default function DeviceRegistration() {
       const data = await response.json();
 
       if (response.ok) {
+        logger.logDevice("Device Added", {
+          name: deviceName,
+          code: deviceCode,
+          type: deviceType,
+        });
         setDeviceName("");
         setDeviceCode("");
         setLocation("");
@@ -222,6 +288,9 @@ export default function DeviceRegistration() {
         fetchDevices();
         fetchStats();
       } else {
+        logger.logApiError("/api/devices (add)", new Error(data.message), {
+          status: response.status,
+        });
         console.error("Add device failed:", response.status, data);
         setError(data.message || `Failed to add device (${response.status})`);
       }
@@ -589,9 +658,41 @@ export default function DeviceRegistration() {
             <h2 className="text-xl font-bold text-gray-800">
               Daftar Perangkat
             </h2>
+            {/* Select All Checkbox */}
+            {devices.length > 0 && (
+              <label className="flex items-center gap-2 cursor-pointer ml-4">
+                <input
+                  type="checkbox"
+                  checked={selectedDevices.length === devices.length}
+                  onChange={(e) => {
+                    if (e.target.checked) {
+                      setSelectedDevices(devices.map((d) => d.id));
+                    } else {
+                      setSelectedDevices([]);
+                    }
+                  }}
+                  className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
+                />
+                <span className="text-sm text-gray-600">Pilih Semua</span>
+              </label>
+            )}
           </div>
-          <div className="text-sm text-gray-500">
-            {devices.length} perangkat terdaftar
+          <div className="flex items-center gap-3">
+            {selectedDevices.length > 0 && (
+              <button
+                onClick={() => setShowBulkAssignModal(true)}
+                className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-green-600 to-emerald-600 text-white font-semibold rounded-xl shadow-lg hover:from-green-700 hover:to-emerald-700 transition-all"
+              >
+                <PlayIcon className="h-5 w-5" />
+                <span>
+                  Assign Playlist ({selectedDevices.length}{" "}
+                  {selectedDevices.length === 1 ? "device" : "devices"})
+                </span>
+              </button>
+            )}
+            <div className="text-sm text-gray-500">
+              {devices.length} perangkat terdaftar
+            </div>
           </div>
         </div>
 
@@ -627,6 +728,29 @@ export default function DeviceRegistration() {
                   <div className="bg-gradient-to-r from-gray-50 to-gray-100 p-4 border-b border-gray-200">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-3">
+                        {/* Checkbox untuk select device */}
+                        <label className="flex items-center cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={selectedDevices.includes(device.id)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSelectedDevices([
+                                  ...selectedDevices,
+                                  device.id,
+                                ]);
+                              } else {
+                                setSelectedDevices(
+                                  selectedDevices.filter(
+                                    (id) => id !== device.id
+                                  )
+                                );
+                              }
+                            }}
+                            className="w-5 h-5 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                        </label>
                         <div className="p-2 bg-white rounded-lg shadow-sm">
                           <DeviceIcon className="h-6 w-6 text-gray-600" />
                         </div>
@@ -781,6 +905,97 @@ export default function DeviceRegistration() {
           }}
           onUpdate={handleUpdateDevice}
         />
+      )}
+
+      {/* Bulk Assign Playlist Modal */}
+      {showBulkAssignModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+          <div className="bg-white rounded-2xl shadow-2xl p-6 min-w-[400px] max-w-md">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-bold text-gray-800">
+                Assign Playlist ke Multiple Devices
+              </h2>
+              <button
+                onClick={() => {
+                  setShowBulkAssignModal(false);
+                  setSelectedBulkPlaylist("");
+                }}
+                disabled={bulkAssignLoading}
+                className="p-2 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100 transition-all"
+              >
+                <XMarkIcon className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="mb-4">
+              <p className="text-sm text-gray-600 mb-2">
+                Anda akan assign playlist ke{" "}
+                <span className="font-bold text-blue-600">
+                  {selectedDevices.length} device(s)
+                </span>
+                :
+              </p>
+              <div className="bg-gray-50 rounded-lg p-3 max-h-32 overflow-y-auto">
+                <ul className="space-y-1 text-sm text-gray-700">
+                  {devices
+                    .filter((d) => selectedDevices.includes(d.id))
+                    .map((d) => (
+                      <li key={d.id} className="flex items-center gap-2">
+                        <CheckIcon className="h-4 w-4 text-green-500" />
+                        {d.name}
+                      </li>
+                    ))}
+                </ul>
+              </div>
+            </div>
+
+            <div className="mb-6">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Pilih Playlist
+              </label>
+              <select
+                className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
+                value={selectedBulkPlaylist}
+                onChange={(e) => setSelectedBulkPlaylist(e.target.value)}
+                disabled={bulkAssignLoading}
+              >
+                <option value="">-- Pilih Playlist --</option>
+                {playlists.map((pl) => (
+                  <option key={pl.id} value={pl.id}>
+                    {pl.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                className="flex-1 px-4 py-3 text-gray-700 border border-gray-300 rounded-xl hover:bg-gray-50 transition-all"
+                onClick={() => {
+                  setShowBulkAssignModal(false);
+                  setSelectedBulkPlaylist("");
+                }}
+                disabled={bulkAssignLoading}
+              >
+                Batal
+              </button>
+              <button
+                className="flex-1 px-4 py-3 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-xl font-semibold hover:from-green-700 hover:to-emerald-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                onClick={handleBulkAssignPlaylist}
+                disabled={!selectedBulkPlaylist || bulkAssignLoading}
+              >
+                {bulkAssignLoading ? (
+                  <div className="flex items-center justify-center gap-2">
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                    <span>Assigning...</span>
+                  </div>
+                ) : (
+                  "Assign Playlist"
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

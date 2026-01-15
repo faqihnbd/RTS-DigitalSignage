@@ -3,6 +3,7 @@ import * as XLSX from "xlsx";
 import { saveAs } from "file-saver";
 import jsPDF from "jspdf";
 import "jspdf-autotable";
+import logger from "../utils/logger";
 const API_URL = import.meta.env.VITE_API_URL;
 
 export default function ScheduleManagement() {
@@ -23,7 +24,10 @@ export default function ScheduleManagement() {
         return res.json();
       })
       .then((data) => setSchedules(Array.isArray(data) ? data : []))
-      .catch(() => setSchedules([]))
+      .catch((err) => {
+        logger.logApiError("/api/schedules", err);
+        setSchedules([]);
+      })
       .finally(() => setLoading(false));
   }, []);
 

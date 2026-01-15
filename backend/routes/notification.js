@@ -1,5 +1,6 @@
 const express = require("express");
 const { User, Tenant, Device, Content } = require("../models");
+const logger = require("../utils/logger");
 const router = express.Router();
 
 // GET /notifications - Get notifications for current user
@@ -79,7 +80,11 @@ router.get("/", async (req, res) => {
 
     res.json(notifications);
   } catch (error) {
-    console.error("Error fetching notifications:", error);
+    logger.logError(error, req, {
+      action: "fetch_notifications",
+      userId: req.user.id,
+      tenantId: req.user.tenant_id,
+    });
     res.status(500).json({ message: "Internal server error" });
   }
 });
@@ -93,7 +98,10 @@ router.post("/:id/read", async (req, res) => {
     // For now, just return success
     res.json({ message: "Notification marked as read", id: parseInt(id) });
   } catch (error) {
-    console.error("Error marking notification as read:", error);
+    logger.logError(error, req, {
+      action: "mark_notification_read",
+      notificationId: req.params.id,
+    });
     res.status(500).json({ message: "Internal server error" });
   }
 });
@@ -107,7 +115,10 @@ router.delete("/:id", async (req, res) => {
     // For now, just return success
     res.json({ message: "Notification deleted", id: parseInt(id) });
   } catch (error) {
-    console.error("Error deleting notification:", error);
+    logger.logError(error, req, {
+      action: "delete_notification",
+      notificationId: req.params.id,
+    });
     res.status(500).json({ message: "Internal server error" });
   }
 });

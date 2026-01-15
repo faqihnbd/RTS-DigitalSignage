@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import StorageService from "../services/StorageService";
+import logger from "../utils/logger";
 
 const AuthScreen = ({
   onAuthentication,
@@ -42,6 +43,7 @@ const AuthScreen = ({
       onClearError();
     }
 
+    logger.logDevice("Authentication Attempt", { deviceId });
     await onAuthentication(deviceId, licenseKey);
   };
 
@@ -78,53 +80,46 @@ const AuthScreen = ({
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900 flex items-center justify-center p-4">
-      {/* Background Pattern */}
-      <div className="absolute inset-0 opacity-10">
-        <div
-          className="absolute inset-0"
-          style={{
-            backgroundImage:
-              'url(\'data:image/svg+xml,%3Csvg width="40" height="40" viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg"%3E%3Cg fill="white" fill-opacity="0.1" fill-rule="evenodd"%3E%3Cpath d="m0 40l40-40h-40v40zm40 0v-40h-40l40 40z"/%3E%3C/g%3E%3C/svg%3E\')',
-          }}
-        ></div>
+    <div className="min-h-screen flex items-center justify-center relative overflow-hidden">
+      {/* Background Image with Blur */}
+      <div
+        className="absolute inset-0 z-0 bg-cover bg-center bg-no-repeat"
+        style={{
+          backgroundImage: 'url("/public/bg-login2.png")',
+        }}
+      >
+        <div className="absolute inset-0 backdrop-blur-sm bg-black/20"></div>
       </div>
 
       {/* Auth Card */}
-      <div className="relative w-full max-w-md">
+      <div className="relative w-full max-w-xs">
         {/* Glow Effect */}
-        <div className="absolute inset-0 bg-gradient-to-r from-blue-600 to-purple-600 rounded-2xl blur-xl opacity-30 scale-105"></div>
+        <div className="absolute inset-0 bg-gradient-to-r from-blue-600 to-blue-600 rounded-2xl blur-xl opacity-30 scale-105"></div>
 
         {/* Main Card */}
-        <div className="relative bg-white/10 backdrop-blur-xl border border-white/20 rounded-2xl p-8 shadow-2xl">
+        <div className="relative bg-white/10 backdrop-blur-xl border border-white/20 rounded-2xl p-5 shadow-2xl">
           {/* Logo/Header */}
-          <div className="text-center mb-8">
-            <div className="w-16 h-16 bg-gradient-to-r from-blue-500 to-purple-600 rounded-2xl mx-auto mb-4 flex items-center justify-center">
-              <svg
-                className="w-8 h-8 text-white"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
-                />
-              </svg>
+          <div className="text-center mb-6">
+            <div className="w-14 h-14 bg-white rounded-2xl mx-auto mb-3 flex items-center justify-center overflow-hidden">
+              <img
+                src="/Wisse_logo1.png"
+                alt="Wisse Logo"
+                className="w-7 h-7 object-contain"
+              />
             </div>
-            <h1 className="text-3xl font-bold text-white mb-2">
-              RTS Digital Signage
+            <h1 className="text-2xl font-bold text-white mb-1">
+              Wisse Digital Signage
             </h1>
-            <p className="text-blue-200/80">Connect your display device</p>
+            <p className="text-sm text-blue-200/80">
+              Connect your display device
+            </p>
           </div>
 
           {/* Form */}
           <form onSubmit={handleSubmit} className="space-y-6">
             {/* Device ID Input */}
             <div className="space-y-2">
-              <label className="block text-sm font-medium text-blue-100">
+              <label className="block text-xs font-medium text-blue-100">
                 Device ID
               </label>
               <div className="relative">
@@ -148,7 +143,7 @@ const AuthScreen = ({
                   value={deviceId}
                   onChange={(e) => setDeviceId(e.target.value)}
                   placeholder="TV001, DISPLAY-LOBBY, etc."
-                  className="w-full pl-10 pr-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-blue-200/60 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
+                  className="w-full pl-10 pr-4 py-2 bg-white/10 border border-white/20 rounded-xl text-white text-sm placeholder-blue-200/60 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
                   required
                 />
               </div>
@@ -156,7 +151,7 @@ const AuthScreen = ({
 
             {/* License Key Input */}
             <div className="space-y-2">
-              <label className="block text-sm font-medium text-blue-100">
+              <label className="block text-xs font-medium text-blue-100">
                 License Key
               </label>
               <div className="relative">
@@ -180,7 +175,7 @@ const AuthScreen = ({
                   value={licenseKey}
                   onChange={(e) => setLicenseKey(e.target.value)}
                   placeholder="Enter your license key"
-                  className="w-full pl-10 pr-12 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-blue-200/60 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
+                  className="w-full pl-10 pr-12 py-2 bg-white/10 border border-white/20 rounded-xl text-white text-sm placeholder-blue-200/60 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
                   required
                 />
                 <button
@@ -259,7 +254,7 @@ const AuthScreen = ({
               disabled={
                 isAuthenticating || !deviceId.trim() || !licenseKey.trim()
               }
-              className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 disabled:from-gray-600 disabled:to-gray-700 text-white font-semibold py-3 px-6 rounded-xl transition-all duration-200 transform hover:scale-[1.02] disabled:scale-100 disabled:cursor-not-allowed shadow-lg"
+              className="w-full bg-blue-500 text-white font-semibold py-2 px-5 rounded-xl transition-all duration-200 transform hover:scale-[1.02] disabled:scale-100 disabled:cursor-not-allowed shadow-lg text-sm"
             >
               {isAuthenticating ? (
                 <div className="flex items-center justify-center space-x-2">
@@ -288,7 +283,7 @@ const AuthScreen = ({
           </form>
 
           {/* Footer */}
-          <div className="mt-8 pt-6 border-t border-white/10 space-y-3">
+          <div className="mt-6 pt-4 border-t border-white/10 space-y-3">
             <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-3">
               <div className="flex items-start space-x-2">
                 <svg

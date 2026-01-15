@@ -18,6 +18,7 @@ import {
 } from "@heroicons/react/24/outline";
 import LayoutBuilder from "../components/LayoutBuilder";
 import LayoutPreview from "../components/LayoutPreview";
+import logger from "../utils/logger";
 
 const LAYOUT_TYPES = {
   split_vertical: {
@@ -111,7 +112,7 @@ export default function LayoutManagement() {
       const data = await response.json();
       setLayouts(data);
     } catch (error) {
-      console.error("Error fetching layouts:", error);
+      logger.logApiError("/api/layouts", error);
     } finally {
       setLoading(false);
     }
@@ -131,7 +132,7 @@ export default function LayoutManagement() {
       const data = await response.json();
       setTemplates(data);
     } catch (error) {
-      console.error("Error fetching templates:", error);
+      logger.logApiError("/api/layouts/templates", error);
     }
   };
 
@@ -158,11 +159,12 @@ export default function LayoutManagement() {
       );
 
       if (response.ok) {
+        logger.logLayout("Layout Created from Template", { templateType });
         fetchLayouts();
         setShowTemplates(false);
       }
     } catch (error) {
-      console.error("Error creating layout:", error);
+      logger.logApiError("/api/layouts/from-template (POST)", error);
     }
   };
 

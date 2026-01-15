@@ -1,6 +1,7 @@
 const express = require("express");
 const { PlayerStat, Device, Content, Tenant, sequelize } = require("../models");
 const { Op } = require("sequelize");
+const logger = require("../utils/logger");
 const router = express.Router();
 
 // Only super admin or tenant admin for their tenant
@@ -166,7 +167,7 @@ router.get("/dashboard", async (req, res) => {
 
     res.json(dashboardStats);
   } catch (error) {
-    console.error("Error fetching dashboard statistics:", error);
+    logger.logError(error, req, { action: "fetch_dashboard_statistics" });
     res.status(500).json({ message: "Internal server error" });
   }
 });
@@ -250,7 +251,7 @@ router.get("/dashboard-test", async (req, res) => {
 
     res.json(dashboardStats);
   } catch (error) {
-    console.error("Error fetching dashboard statistics (test):", error);
+    logger.logError(error, req, { action: "fetch_dashboard_statistics_test" });
     res.status(500).json({ message: "Internal server error" });
   }
 });
@@ -324,7 +325,7 @@ router.get("/global", async (req, res) => {
 
     res.json(globalStats);
   } catch (error) {
-    console.error("Error fetching global statistics:", error);
+    logger.logError(error, req, { action: "fetch_global_statistics" });
     res.status(500).json({ message: "Internal server error" });
   }
 });
@@ -385,7 +386,7 @@ router.get("/daily-global", async (req, res) => {
 
     res.json(transformedStats);
   } catch (error) {
-    console.error("Error fetching daily global statistics:", error);
+    logger.logError(error, req, { action: "fetch_daily_global_statistics" });
     res.status(500).json({ message: "Internal server error" });
   }
 });

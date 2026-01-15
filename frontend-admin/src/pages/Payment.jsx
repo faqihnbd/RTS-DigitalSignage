@@ -10,6 +10,7 @@ import {
   ArrowDownTrayIcon,
 } from "@heroicons/react/24/outline";
 import { useNotification } from "../components/NotificationProvider";
+import logger from "../utils/logger";
 
 export default function Payment() {
   const [payments, setPayments] = useState([]);

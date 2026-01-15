@@ -22,7 +22,7 @@ const VideoPreloader = ({ items, currentIndex }) => {
         video.muted = true;
         video.style.display = "none";
 
-        const baseUrl = import.meta.env.VITE_API_URL || "http://localhost:3000";
+        const baseUrl = import.meta.env.VITE_API_URL;
         video.src = `${baseUrl}/api/player/content/${item.content_id}`;
 
         document.body.appendChild(video);

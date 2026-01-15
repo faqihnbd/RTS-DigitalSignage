@@ -3,6 +3,7 @@ import * as XLSX from "xlsx";
 import { saveAs } from "file-saver";
 import jsPDF from "jspdf";
 import "jspdf-autotable";
+import logger from "../utils/logger";
 const API_URL = import.meta.env.VITE_API_URL;
 
 export default function PaymentHistory() {
@@ -38,6 +39,7 @@ export default function PaymentHistory() {
         setPayments(sortedPayments);
       })
       .catch((err) => {
+        logger.logApiError("/api/payments", err);
         setError(err.message);
         setPayments([]);
       })
