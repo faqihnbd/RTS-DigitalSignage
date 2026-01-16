@@ -205,12 +205,12 @@ export default function Layout({ children }) {
     //label: "Pembayaran",
     //desc: "Riwayat & Status",
     //},
-    {
-      href: "/upgrade",
-      icon: ArrowUpCircleIcon,
-      label: "Upgrade",
-      desc: "Tingkatkan Paket",
-    },
+    //{
+    //href: "/upgrade",
+    //icon: ArrowUpCircleIcon,
+    //label: "Upgrade",
+    //desc: "Tingkatkan Paket",
+    //},
   ];
 
   return (
